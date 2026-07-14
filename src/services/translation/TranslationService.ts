@@ -25,7 +25,7 @@ export class TranslationService {
     if (!text) throw new Error('No text content found for this document.');
 
     // Translate
-    const translated = await this.aiProvider.translate(text, targetLanguage, { sourceLanguage: options?.sourceLanguage });
+    const translated = await this.aiProvider.translate(text, targetLanguage, {});
 
     // Cache
     await fileRepository.saveTranslation(fileId, targetLanguage, translated);
@@ -41,6 +41,6 @@ export class TranslationService {
    * @returns Translated text.
    */
   async translateText(text: string, targetLanguage: string, options?: { sourceLanguage?: string }): Promise<string> {
-    return await this.aiProvider.translate(text, targetLanguage, { sourceLanguage: options?.sourceLanguage });
+    return await this.aiProvider.translate(text, targetLanguage, {});
   }
 }

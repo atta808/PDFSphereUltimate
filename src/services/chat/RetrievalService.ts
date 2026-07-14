@@ -43,9 +43,9 @@ export class RetrievalService {
       LIMIT ?
     `;
     const allParams = [...params, fileId, ...params, topK];
-    const result = await db.execAsync(sql, allParams);
-    if (result && result[0] && result[0].rows) {
-      return result[0].rows.map((row: any) => ({
+    const result = await db.getAllAsync(sql, ...allParams);
+    if (result && result.length > 0) {
+      return result.map((row: any) => ({
         id: row.id,
         content: row.content,
         pageNumbers: row.page_numbers ? JSON.parse(row.page_numbers) : undefined,

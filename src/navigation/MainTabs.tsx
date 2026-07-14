@@ -4,7 +4,7 @@ import { Routes } from '../constants/routes';
 import { useTheme } from '../theme/ThemeContext';
 import { HomeScreen } from '../screens/HomeScreen/HomeScreen';
 import { FileManagerScreen } from '../screens/FileManagerScreen/FileManagerScreen';
-import { ScannerScreen } from '../screens/ScannerScreen/ScannerScreen';
+import { ScannerScreen } from '../screens/ScannerScreen';
 import { AIScreen } from '../screens/AIScreen/AIScreen';
 import { SettingsScreen } from '../screens/SettingsScreen/SettingsScreen';
 import { PDFViewerStack } from './PDFViewerStack';
@@ -21,7 +21,7 @@ export const MainTabs: React.FC = () => {
   const { theme } = useTheme();
 
   return (
-    <Tab.Navigator
+    <Tab.Navigator id="MainTabs"
       screenOptions={({ route }) => ({
         tabBarIcon: ({ focused, color, size }) => {
           let iconName: keyof typeof Ionicons.glyphMap = 'home';

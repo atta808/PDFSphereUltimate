@@ -23,14 +23,11 @@ export class OCREngine {
       }
 
       // Perform OCR
-      const result = await extractTextFromImage(imageUri, {
-        language: languageHint || 'en',
-        // Additional options (if supported)
-      });
+      const result = await extractTextFromImage(imageUri);
 
       // The result is an array of blocks with text and bounding boxes.
       // We combine them into a single string.
-      const fullText = result.map(block => block.text).join(' ').trim();
+      const fullText = result.join(' ').trim();
 
       return {
         text: fullText,

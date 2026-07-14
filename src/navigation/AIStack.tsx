@@ -15,11 +15,11 @@ const Stack = createStackNavigator<AIStackParamList>();
 
 export const AIStack: React.FC = () => {
   return (
-    <Stack.Navigator
+    <Stack.Navigator id="AIStack"
       screenOptions={{
         headerShown: false,
         cardStyle: { backgroundColor: "transparent" },
-        animationEnabled: true,
+
       }}
     >
       <Stack.Screen name={Routes.AI} component={AIScreen} />

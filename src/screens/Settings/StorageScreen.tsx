@@ -49,7 +49,7 @@ export const StorageScreen: React.FC = () => {
       const totalSize = files.reduce((acc, f) => acc + (f.size || 0), 0);
 
       // Calculate cache size (temporary files in cache directory)
-      const cacheDir = FileSystem.cacheDirectory || "";
+      const cacheDir = FileSystem.Paths.cache?.uri || "";
       let cacheSize = 0;
       if (cacheDir) {
         try {
@@ -65,7 +65,7 @@ export const StorageScreen: React.FC = () => {
       }
 
       // Document directory size (for PDFs and other documents)
-      const docDir = FileSystem.documentDirectory || "";
+      const docDir = FileSystem.Paths.document?.uri || "" || "";
       let documentSize = 0;
       if (docDir) {
         try {
@@ -132,7 +132,7 @@ export const StorageScreen: React.FC = () => {
           onPress: async () => {
             setIsClearing(true);
             try {
-              const cacheDir = FileSystem.cacheDirectory || "";
+              const cacheDir = FileSystem.Paths.cache?.uri || "";
               if (cacheDir) {
                 const files = await FileSystem.readDirectoryAsync(cacheDir);
                 let deletedCount = 0;

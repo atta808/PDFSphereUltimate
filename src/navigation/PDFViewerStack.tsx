@@ -14,15 +14,14 @@ const Stack = createStackNavigator<PDFViewerStackParamList>();
 
 export const PDFViewerStack: React.FC = () => {
   return (
-    <Stack.Navigator
+    <Stack.Navigator id="PDFViewerStack"
       screenOptions={{
         headerShown: false,
         cardStyle: { backgroundColor: "transparent" },
-        animationEnabled: true,
       }}
     >
       <Stack.Screen name={Routes.PDF_VIEWER} component={PDFViewerScreen} />
-      <Stack.Screen name={Routes.EDITOR} component={EditorScreen} />
+      <Stack.Screen name={Routes.EDITOR} component={EditorScreen as any} />
       <Stack.Screen name={Routes.OCR} component={OCRScreen} />
       <Stack.Screen
         name={Routes.TEXT_EXTRACTION}

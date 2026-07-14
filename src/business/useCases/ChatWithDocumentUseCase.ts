@@ -231,7 +231,7 @@ export class ChatWithDocumentUseCase {
         [conversationId],
       );
       if (result && result.length > 0) {
-        return result[0].file_id;
+        return (result[0] as any).file_id;
       }
       return null;
     } catch (error) {

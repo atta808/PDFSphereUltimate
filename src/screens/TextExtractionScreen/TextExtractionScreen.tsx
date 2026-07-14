@@ -75,7 +75,7 @@ export const TextExtractionScreen: React.FC = () => {
         setFileUri(uri);
         // Read file as base64
         const base64 = await FileSystem.readAsStringAsync(uri, {
-          encoding: FileSystem.EncodingType.Base64,
+          encoding: "base64",
         });
         // Send to WebView for extraction
         if (webViewRef.current && isWebViewReady) {

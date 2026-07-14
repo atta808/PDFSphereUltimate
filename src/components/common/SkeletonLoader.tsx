@@ -6,7 +6,7 @@ const { width } = Dimensions.get('window');
 
 export interface SkeletonLoaderProps {
   /** Width of the skeleton (default: '100%') */
-  width?: number | string;
+  width?: import('react-native').DimensionValue;
   /** Height of the skeleton (default: 20) */
   height?: number;
   /** Border radius (default: 8) */
@@ -38,9 +38,9 @@ export const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
           width,
           height,
           borderRadius,
-          backgroundColor: theme.isDark ? theme.colors.surfaceSecondary : theme.colors.borderLight,
-          style,
+          backgroundColor: theme.isDark ? theme.colors.surfaceSecondary : theme.colors.borderLight
         },
+        style,
       ]}
     />
   );

@@ -10,7 +10,7 @@ export interface Message {
   id?: number;
   role: 'user' | 'assistant';
   content: string;
-  citations?: Array<{ page: number; text: string; chunkId: number }>;
+  citations?: Array<{ page: number; text: string; chunkId?: number }>;
   modelVersion?: string;
   promptVersion?: string;
   retrievalVersion?: string;
@@ -39,12 +39,9 @@ export class ChatService {
    * Create a new conversation.
    */
   async createConversation(fileId: string, title: string = 'New Chat'): Promise<number> {
-    const result = await db.execAsync(
-      `INSERT INTO conversations (file_id, title) VALUES (?, ?) RETURNING id`,
-      [fileId, title]
-    );
-    if (result && result[0] && result[0].rows) {
-      return result[0].rows[0].id;
+    const result = await db.getAllAsync(`INSERT INTO conversations (file_id, title) VALUES (?, ?) RETURNING id`, fileId, title);
+    if (result && result.length > 0) {
+      return (result[0] as any).id;
     }
     throw new Error('Failed to create conversation');
   }
@@ -53,15 +50,12 @@ export class ChatService {
    * Get conversations for a document.
    */
   async getConversations(fileId: string): Promise<Conversation[]> {
-    const result = await db.execAsync(
-      `SELECT id, file_id, title, created_at, updated_at, message_count, archived, pinned
+    const result = await db.getAllAsync(`SELECT id, file_id, title, created_at, updated_at, message_count, archived, pinned
        FROM conversations
        WHERE file_id = ? AND archived = 0
-       ORDER BY updated_at DESC`,
-      [fileId]
-    );
-    if (result && result[0] && result[0].rows) {
-      return result[0].rows.map((row: any) => ({
+       ORDER BY updated_at DESC`, fileId);
+    if (result && result.length > 0) {
+      return result.map((row: any) => ({
         id: row.id,
         fileId: row.file_id,
         title: row.title,
@@ -84,14 +78,11 @@ export class ChatService {
     options?: { topK?: number; temperature?: number }
   ): Promise<{ response: string; citations: Array<{ page: number; text: string }> }> {
     // 1. Get conversation to know fileId
-    const convResult = await db.execAsync(
-      'SELECT file_id FROM conversations WHERE id = ?',
-      [conversationId]
-    );
-    if (!convResult || !convResult[0] || !convResult[0].rows || convResult[0].rows.length === 0) {
+    const convResult = await db.getAllAsync('SELECT file_id FROM conversations WHERE id = ?', conversationId);
+    if (!convResult || !convResult[0] || convResult.length === 0) {
       throw new Error('Conversation not found');
     }
-    const fileId = convResult[0].rows[0].file_id;
+    const fileId = (convResult[0] as any).file_id;
 
     // 2. Ensure chunks exist
     const hasChunks = await this.chunkingService.hasChunks(fileId);
@@ -128,23 +119,14 @@ export class ChatService {
     const response = await this.aiProvider.summarize(prompt, { temperature: options?.temperature || 0.3 });
 
     // 6. Save user message and assistant response
-    await db.execAsync(
-      `INSERT INTO messages (conversation_id, role, content) VALUES (?, ?, ?)`,
-      [conversationId, 'user', userMessage]
-    );
+    await db.runAsync(`INSERT INTO messages (conversation_id, role, content) VALUES (?, ?, ?)`, conversationId, 'user', userMessage);
     const chunkIds = retrievedChunks.map(c => c.id);
     const citationsJson = JSON.stringify(citations);
-    await db.execAsync(
-      `INSERT INTO messages (conversation_id, role, content, citations, chunk_ids)
-       VALUES (?, ?, ?, ?, ?)`,
-      [conversationId, 'assistant', response, citationsJson, JSON.stringify(chunkIds)]
-    );
+    await db.runAsync(`INSERT INTO messages (conversation_id, role, content, citations, chunk_ids)
+       VALUES (?, ?, ?, ?, ?)`, conversationId, 'assistant', response, citationsJson, JSON.stringify(chunkIds));
 
     // 7. Update conversation message count and timestamp
-    await db.execAsync(
-      `UPDATE conversations SET message_count = message_count + 2, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-      [conversationId]
-    );
+    await db.runAsync(`UPDATE conversations SET message_count = message_count + 2, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, conversationId);
 
     return { response, citations };
   }
@@ -153,15 +135,12 @@ export class ChatService {
    * Get message history for a conversation.
    */
   async getMessages(conversationId: number): Promise<Message[]> {
-    const result = await db.execAsync(
-      `SELECT id, role, content, citations, model_version, prompt_version, retrieval_version, chunk_ids, interrupted, created_at
+    const result = await db.getAllAsync(`SELECT id, role, content, citations, model_version, prompt_version, retrieval_version, chunk_ids, interrupted, created_at
        FROM messages
        WHERE conversation_id = ?
-       ORDER BY created_at ASC`,
-      [conversationId]
-    );
-    if (result && result[0] && result[0].rows) {
-      return result[0].rows.map((row: any) => ({
+       ORDER BY created_at ASC`, conversationId);
+    if (result && result.length > 0) {
+      return result.map((row: any) => ({
         id: row.id,
         role: row.role,
         content: row.content,
@@ -189,5 +168,13 @@ export class ChatService {
     }
     // If not, we need to extract. For simplicity, return empty.
     return '';
+  }
+  async deleteMessage(messageId: number): Promise<void> {
+    try {
+      await db.runAsync('DELETE FROM messages WHERE id = ?', messageId);
+    } catch (e) {
+      console.error('Failed to delete message:', e);
+      throw new Error('Could not delete message');
+    }
   }
 }

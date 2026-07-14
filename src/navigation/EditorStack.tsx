@@ -8,8 +8,8 @@ const Stack = createStackNavigator<EditorStackParamList>();
 
 export const EditorStack: React.FC = () => {
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
-      <Stack.Screen name={Routes.EDITOR} component={EditorScreen} />
+    <Stack.Navigator id="EditorStack" screenOptions={{ headerShown: false }}>
+      <Stack.Screen name={Routes.EDITOR} component={EditorScreen as any} />
     </Stack.Navigator>
   );
 };

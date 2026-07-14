@@ -15,7 +15,8 @@ import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import * as SecureStore from 'expo-secure-store';
 import { DeepSeekProvider } from '../../services/ai/DeepSeekProvider';
-import { AIProviderFactory, AIProviderType } from '../../services/ai/AIProviderFactory';
+import { AIProviderFactory } from '../../services/ai/AIProviderFactory';
+import { AIProviderType } from '../../services/ai/AIProvider';
 import { logger } from '../../utils/logger';
 
 export const AISettingsScreen: React.FC = () => {
@@ -58,7 +59,7 @@ export const AISettingsScreen: React.FC = () => {
 
       // Test the key with a simple request (optional but recommended)
       setIsTestingKey(true);
-      const provider = new DeepSeekProvider();
+      const provider = new DeepSeekProvider() as any;
       await provider.setApiKey(apiKey.trim());
 
       // Test with a minimal request (e.g., a simple prompt)

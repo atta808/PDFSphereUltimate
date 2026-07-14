@@ -118,9 +118,9 @@ export const FileManagerScreen: React.FC = () => {
 
   // Handle file press
   const handleFilePress = (file: FileModel) => {
-    navigation.navigate(Routes.PDF_VIEWER, {
+    navigation.navigate(Routes.PDF_VIEWER, { screen: Routes.PDF_VIEWER, params: {
       fileId: file.id,
-      filePath: file.uri,
+      filePath: file.uri, }
     });
   };
 

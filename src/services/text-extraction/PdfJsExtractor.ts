@@ -83,7 +83,7 @@ export class PdfJsExtractor implements ITextExtractionProvider {
 
       // Read file as base64
       const base64 = await FileSystem.readAsStringAsync(pdfUri, {
-        encoding: FileSystem.EncodingType.Base64,
+        encoding: "base64",
       });
 
       // Send to WebView for extraction

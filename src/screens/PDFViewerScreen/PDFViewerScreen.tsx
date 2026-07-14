@@ -16,12 +16,12 @@ import { useTheme } from "../../theme/ThemeContext";
 import { RouteProp, useNavigation } from "@react-navigation/native";
 import {
   PDFViewerScreenRouteProp,
-  PDFViewerScreenNavigationProp,
+  PDFViewerNavigationProp,
 } from "../../navigation/types";
 import { Ionicons } from "@expo/vector-icons";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system";
-import Pdf from "@kishannareshpal/expo-pdf";
+import { PdfView as Pdf } from "@kishannareshpal/expo-pdf";
 import { fileRepository } from "../../repository/FileRepository";
 import { logger } from "../../utils/logger";
 
@@ -32,7 +32,7 @@ export const PDFViewerScreen: React.FC<{ route: PDFViewerScreenRouteProp }> = ({
   route,
 }) => {
   const { theme } = useTheme();
-  const navigation = useNavigation<PDFViewerScreenNavigationProp>();
+  const navigation = useNavigation<PDFViewerNavigationProp>();
   const { fileId, filePath } = route.params || {};
 
   const [pdfUri, setPdfUri] = useState<string | null>(filePath || null);
@@ -95,7 +95,7 @@ export const PDFViewerScreen: React.FC<{ route: PDFViewerScreenRouteProp }> = ({
   }, [fileId, filePath]);
 
   // Handle PDF load completion
-  const onLoadComplete = (numberOfPages: number, filePath: string) => {
+  const onLoadComplete = (params: any) => { const numberOfPages = typeof params === 'object' && params.pageCount !== undefined ? params.pageCount : (typeof params === 'number' ? params : 0);
     setTotalPages(numberOfPages);
     setIsLoading(false);
     setIsError(false);
@@ -117,7 +117,7 @@ export const PDFViewerScreen: React.FC<{ route: PDFViewerScreenRouteProp }> = ({
   };
 
   // Handle PDF page change
-  const onPageChanged = (page: number) => {
+  const onPageChanged = (params: any) => { const page = typeof params === 'object' && params.pageIndex !== undefined ? params.pageIndex : (typeof params === 'number' ? params : 1);
     setCurrentPage(page);
   };
 
@@ -350,18 +350,12 @@ export const PDFViewerScreen: React.FC<{ route: PDFViewerScreenRouteProp }> = ({
         {/* PDF Renderer */}
         <View style={styles.pdfContainer}>
           <Pdf
-            ref={pdfRef}
-            source={{ uri: pdfUri, password: password || undefined }}
-            onLoadComplete={onLoadComplete}
-            onPageChanged={onPageChanged}
+            uri={pdfUri}
+            password={password || undefined}
+            onLoadComplete={onLoadComplete as any}
+            onPageChanged={onPageChanged as any}
             onError={onError}
             style={styles.pdf}
-            scale={scale}
-            enablePaging={false}
-            fitPolicy={0} // 0 = fit width, 1 = fit height, 2 = fit page
-            singlePage={false}
-            minScale={0.5}
-            maxScale={3.0}
           />
         </View>
 
