@@ -60,11 +60,11 @@ export class ChunkingService {
    */
   async chunkDocument(fileId: string, text: string, extractionVersion: string = 'v1'): Promise<void> {
     // Remove existing chunks
-    await db.execAsync('DELETE FROM chunks WHERE file_id = ?', [fileId]);
+    await db.getAllAsync('DELETE FROM chunks WHERE file_id = ?', fileId);
 
     const chunkTexts = this.splitText(text);
     for (let i = 0; i < chunkTexts.length; i++) {
-      await db.execAsync(
+      await db.getAllAsync(
         `INSERT INTO chunks (file_id, chunk_index, content, extraction_version)
          VALUES (?, ?, ?, ?)`,
         [fileId, i, chunkTexts[i], extractionVersion]
@@ -78,12 +78,12 @@ export class ChunkingService {
    * @returns Array of chunks with content and index.
    */
   async getChunks(fileId: string): Promise<Chunk[]> {
-    const result = await db.execAsync(
+    const result = await db.getAllAsync(
       'SELECT id, chunk_index, content, page_numbers, extraction_version FROM chunks WHERE file_id = ? ORDER BY chunk_index',
       [fileId]
     );
-    if (result && result[0] && result[0].rows) {
-      return result[0].rows.map((row: any) => ({
+    if (result && result.length > 0) {
+      return result.map((row: any) => ({
         id: row.id,
         fileId: fileId,
         chunkIndex: row.chunk_index,
@@ -99,9 +99,9 @@ export class ChunkingService {
    * Check if chunks exist for a document.
    */
   async hasChunks(fileId: string): Promise<boolean> {
-    const result = await db.execAsync('SELECT COUNT(*) as count FROM chunks WHERE file_id = ?', [fileId]);
-    if (result && result[0] && result[0].rows) {
-      return result[0].rows[0].count > 0;
+    const result = await db.getAllAsync('SELECT COUNT(*) as count FROM chunks WHERE file_id = ?', fileId);
+    if (result && result.length > 0) {
+      return (result[0] as any).count > 0;
     }
     return false;
   }

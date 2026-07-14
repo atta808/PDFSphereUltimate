@@ -1,25 +1,7 @@
-import { RouteProp } from "@react-navigation/native";
+import { RouteProp, NavigatorScreenParams, CompositeNavigationProp } from "@react-navigation/native";
 import { StackNavigationProp } from "@react-navigation/stack";
 import { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
 import { Routes } from "../constants/routes";
-
-// ==================== Root Stack ====================
-
-export type RootStackParamList = {
-  [Routes.ROOT]: undefined;
-  [Routes.AUTH]: undefined;
-  [Routes.MAIN]: undefined;
-};
-
-// ==================== Main Tabs ====================
-
-export type MainTabParamList = {
-  [Routes.HOME]: undefined;
-  [Routes.FILES]: undefined;
-  [Routes.SCANNER]: undefined;
-  [Routes.AI]: undefined;
-  [Routes.SETTINGS]: undefined;
-};
 
 // ==================== PDF Viewer Stack ====================
 
@@ -35,14 +17,12 @@ export type PDFViewerStackParamList = {
 
 export type ScannerStackParamList = {
   [Routes.SCANNER]: undefined;
-  // Future: camera, gallery, etc.
 };
 
 // ==================== Editor Stack ====================
 
 export type EditorStackParamList = {
   [Routes.EDITOR]: { fileId: string };
-  // Future: merge, split, rotate, etc.
 };
 
 // ==================== AI Stack ====================
@@ -68,30 +48,68 @@ export type SettingsStackParamList = {
   [Routes.SETTINGS_ABOUT]: undefined;
 };
 
+// ==================== Main Tabs ====================
+
+export type MainTabParamList = {
+  [Routes.HOME]: undefined;
+  [Routes.FILES]: undefined;
+  [Routes.SCANNER]: NavigatorScreenParams<ScannerStackParamList>;
+  [Routes.AI]: NavigatorScreenParams<AIStackParamList>;
+  [Routes.SETTINGS]: NavigatorScreenParams<SettingsStackParamList>;
+};
+
+// ==================== Root Stack ====================
+
+export type RootStackParamList = {
+  [Routes.ROOT]: undefined;
+  [Routes.AUTH]: undefined;
+  [Routes.MAIN]: NavigatorScreenParams<MainTabParamList>;
+  [Routes.PDF_VIEWER]: NavigatorScreenParams<PDFViewerStackParamList>;
+};
+
 // ==================== Combined Navigation Prop Types ====================
 
-// Root stack
 export type RootStackNavigationProp = StackNavigationProp<RootStackParamList>;
 
-// Main tabs
-export type MainTabNavigationProp = BottomTabNavigationProp<MainTabParamList>;
+export type MainTabNavigationProp = CompositeNavigationProp<
+  BottomTabNavigationProp<MainTabParamList>,
+  StackNavigationProp<RootStackParamList>
+>;
 
-// PDF Viewer stack
-export type PDFViewerNavigationProp =
-  StackNavigationProp<PDFViewerStackParamList>;
+export type PDFViewerNavigationProp = CompositeNavigationProp<
+  StackNavigationProp<PDFViewerStackParamList>,
+  StackNavigationProp<RootStackParamList>
+>;
+
 export type PDFViewerScreenRouteProp = RouteProp<
   PDFViewerStackParamList,
   typeof Routes.PDF_VIEWER
 >;
 
-// Scanner stack
-export type ScannerNavigationProp = StackNavigationProp<ScannerStackParamList>;
+export type ScannerNavigationProp = CompositeNavigationProp<
+  StackNavigationProp<ScannerStackParamList>,
+  CompositeNavigationProp<
+    BottomTabNavigationProp<MainTabParamList>,
+    StackNavigationProp<RootStackParamList>
+  >
+>;
 
-// Editor stack
-export type EditorNavigationProp = StackNavigationProp<EditorStackParamList>;
+export type EditorNavigationProp = CompositeNavigationProp<
+  StackNavigationProp<EditorStackParamList>,
+  CompositeNavigationProp<
+    StackNavigationProp<PDFViewerStackParamList>,
+    StackNavigationProp<RootStackParamList>
+  >
+>;
 
-// AI stack
-export type AINavigationProp = StackNavigationProp<AIStackParamList>;
+export type AINavigationProp = CompositeNavigationProp<
+  StackNavigationProp<AIStackParamList>,
+  CompositeNavigationProp<
+    BottomTabNavigationProp<MainTabParamList>,
+    StackNavigationProp<RootStackParamList>
+  >
+>;
+
 export type AISummaryRouteProp = RouteProp<
   AIStackParamList,
   typeof Routes.AI_SUMMARY
@@ -113,16 +131,16 @@ export type AIQuizRouteProp = RouteProp<
   typeof Routes.AI_QUIZ
 >;
 
-// Settings stack
-export type SettingsNavigationProp =
-  StackNavigationProp<SettingsStackParamList>;
+export type SettingsNavigationProp = CompositeNavigationProp<
+  StackNavigationProp<SettingsStackParamList>,
+  CompositeNavigationProp<
+    BottomTabNavigationProp<MainTabParamList>,
+    StackNavigationProp<RootStackParamList>
+  >
+>;
 
 // ==================== Helper: Screen Props ====================
 
-/**
- * Use this type for screens that need both stack and tab navigation.
- * Example: A screen nested inside a stack that is itself inside a tab.
- */
 export type CompositeScreenProps<
   T extends StackNavigationProp<any, any> | BottomTabNavigationProp<any, any>,
   U extends StackNavigationProp<any, any> | BottomTabNavigationProp<any, any>,

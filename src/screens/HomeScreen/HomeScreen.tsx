@@ -10,6 +10,8 @@ import {
   SafeAreaView,
   StatusBar,
   RefreshControl,
+  Alert,
+  ActivityIndicator,
 } from "react-native";
 import { useTheme } from "../../theme/ThemeContext";
 import { useNavigation } from "@react-navigation/native";
@@ -18,6 +20,7 @@ import { MainTabNavigationProp } from "../../navigation/types";
 import { Ionicons } from "@expo/vector-icons";
 import { fileRepository } from "../../repository/FileRepository";
 import { FileModel } from "../../models/FileModel";
+import { MainTabParamList } from "../../navigation/types";
 
 type QuickAction = {
   id: string;
@@ -64,13 +67,13 @@ export const HomeScreen: React.FC = () => {
       id: "open",
       title: "Open PDF",
       icon: "folder-open",
-      route: Routes.FILES,
+      route: Routes.FILES as any,
     },
     {
       id: "scan",
       title: "Scan",
       icon: "camera",
-      route: Routes.SCANNER,
+      route: Routes.SCANNER as any,
     },
     {
       id: "create",
@@ -97,7 +100,7 @@ export const HomeScreen: React.FC = () => {
       icon: "text-outline",
       onPress: () => {
         // Navigate to Text Extraction screen
-        navigation.navigate(Routes.TEXT_EXTRACTION as any);
+        navigation.navigate(Routes.PDF_VIEWER, { screen: Routes.TEXT_EXTRACTION });
       },
     },
     {
@@ -106,7 +109,7 @@ export const HomeScreen: React.FC = () => {
       icon: "chatbubbles-outline",
       onPress: () => {
         // Navigate to AI Chat – we need a file ID. We'll navigate to AI tab.
-        navigation.navigate(Routes.AI);
+        navigation.navigate(Routes.AI, { screen: Routes.AI });
         // In the AI tab, user can select a file.
       },
     },
@@ -114,7 +117,7 @@ export const HomeScreen: React.FC = () => {
 
   const handleQuickAction = (action: QuickAction) => {
     if (action.route) {
-      navigation.navigate(action.route as any);
+      navigation.navigate(action.route as Extract<keyof MainTabParamList, string>);
     } else if (action.onPress) {
       action.onPress();
     }
@@ -124,10 +127,7 @@ export const HomeScreen: React.FC = () => {
     <TouchableOpacity
       style={[styles.fileItem, { backgroundColor: theme.colors.surface }]}
       onPress={() => {
-        navigation.navigate(Routes.PDF_VIEWER, {
-          fileId: item.id,
-          filePath: item.uri,
-        });
+        navigation.navigate(Routes.PDF_VIEWER, { screen: Routes.PDF_VIEWER, params: { fileId: item.id, filePath: item.uri } });
       }}
       activeOpacity={0.7}
     >
@@ -190,7 +190,7 @@ export const HomeScreen: React.FC = () => {
           </View>
           <TouchableOpacity
             style={[styles.profileButton, { borderColor: theme.colors.border }]}
-            onPress={() => navigation.navigate(Routes.SETTINGS)}
+            onPress={() => navigation.navigate(Routes.SETTINGS, { screen: Routes.SETTINGS })}
           >
             <Ionicons
               name="person-circle"
@@ -206,7 +206,7 @@ export const HomeScreen: React.FC = () => {
             styles.searchContainer,
             { backgroundColor: theme.colors.surface },
           ]}
-          onPress={() => navigation.navigate(Routes.SEARCH)}
+          onPress={() => navigation.navigate(Routes.PDF_VIEWER, { screen: Routes.SEARCH })}
           activeOpacity={0.7}
         >
           <Ionicons

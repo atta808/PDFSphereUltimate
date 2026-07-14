@@ -14,14 +14,9 @@ import { useTheme } from "../../theme/ThemeContext";
 import { useNavigation } from "@react-navigation/native";
 import { MainTabNavigationProp } from "../../navigation/types";
 import { Ionicons } from "@expo/vector-icons";
-import {
-  DocumentScanner,
-  type DocumentScannerRef,
-} from "react-native-document-scanner-ai";
-import {
-  requestCameraPermission,
-  requestMicrophonePermission,
-} from "react-native-vision-camera";
+import * as DocumentScannerModule from 'react-native-document-scanner-ai';
+const DocumentScanner = (DocumentScannerModule as any).default || DocumentScannerModule;
+import { useCameraPermission, useMicrophonePermission } from 'react-native-vision-camera';
 import { fileRepository } from "../../repository/FileRepository";
 import { generateUUID } from "../../utils/uuid";
 import * as FileSystem from "expo-file-system";
@@ -32,7 +27,7 @@ export const ScannerScreen: React.FC = () => {
   const { theme } = useTheme();
   const navigation = useNavigation<MainTabNavigationProp>();
 
-  const scannerRef = useRef<DocumentScannerRef>(null);
+  const scannerRef = useRef<any>(null);
   const [isScanning, setIsScanning] = useState<boolean>(false);
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
   const [isAutoCapture, setIsAutoCapture] = useState<boolean>(true);
@@ -40,24 +35,27 @@ export const ScannerScreen: React.FC = () => {
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
 
   // Request permissions on mount
+  const { hasPermission: cameraPermission, requestPermission: reqCameraPermission } = useCameraPermission();
+  const { hasPermission: micPermission, requestPermission: reqMicPermission } = useMicrophonePermission();
   const checkPermissions = useCallback(async () => {
     try {
-      const camera = await requestCameraPermission();
-      // Microphone is required by vision-camera but we don't use audio
-      await requestMicrophonePermission();
-      setHasPermission(camera === "authorized");
-      if (camera !== "authorized") {
-        Alert.alert(
-          "Permission Required",
-          "Camera access is required to scan documents. Please enable it in settings.",
-          [{ text: "OK" }],
-        );
+      let camGranted = cameraPermission;
+      if (!camGranted) {
+        camGranted = await reqCameraPermission();
+      }
+      let micGranted = micPermission;
+      if (!micGranted) {
+        micGranted = await reqMicPermission();
+      }
+      setHasPermission(!!camGranted);
+      if (!camGranted) {
+        Alert.alert("Permission Required", "Camera access is required to scan documents. Please enable it in settings.", [{ text: "OK" }]);
       }
     } catch (error) {
       console.error("Permission error:", error);
       setHasPermission(false);
     }
-  }, []);
+  }, [cameraPermission, micPermission, reqCameraPermission, reqMicPermission]);
 
   useEffect(() => {
     checkPermissions();
@@ -136,7 +134,7 @@ export const ScannerScreen: React.FC = () => {
       const fileId = generateUUID();
 
       // Simulate PDF creation – in reality, you'd use PDFCreationService
-      const pdfUri = `${FileSystem.documentDirectory}${fileName}`;
+      const pdfUri = `${(FileSystem.Paths.document?.uri || 'file:///data/user/0/com.pdfsphere.app/files/')}${fileName}`;
 
       // Save file to repository
       const file = {
@@ -161,7 +159,7 @@ export const ScannerScreen: React.FC = () => {
           text: "View PDF",
           onPress: () => {
             // Navigate to PDF viewer
-            navigation.navigate("PDFViewer", { fileId, filePath: pdfUri });
+            navigation.navigate('PDFViewer' as any, { screen: 'PDFViewer', params: { fileId, filePath: pdfUri } } as any);
           },
         },
         {
@@ -245,7 +243,7 @@ export const ScannerScreen: React.FC = () => {
         style={[styles.container, { backgroundColor: theme.colors.background }]}
       >
         <Ionicons
-          name="camera-off-outline"
+          name="camera-outline"
           size={64}
           color={theme.colors.iconSecondary}
         />

@@ -171,7 +171,7 @@ export class FileRepository {
         [fileId],
       );
       if (result.length === 0) return null;
-      return result[0].content;
+      return (result[0] as any).content;
     } catch (error) {
       logger.error(`Failed to get extracted text for ${fileId}`, error);
       throw error;
@@ -220,7 +220,7 @@ export class FileRepository {
         [fileId],
       );
       if (result.length === 0) return null;
-      return result[0].content;
+      return (result[0] as any).content;
     } catch (error) {
       logger.error(`Failed to get summary for ${fileId}`, error);
       throw error;
@@ -262,7 +262,7 @@ export class FileRepository {
         [fileId, targetLanguage],
       );
       if (result.length === 0) return null;
-      return result[0].content;
+      return (result[0] as any).content;
     } catch (error) {
       logger.error(`Failed to get translation for ${fileId}`, error);
       throw error;
@@ -297,7 +297,7 @@ export class FileRepository {
         [fileId],
       );
       if (result.length === 0) return null;
-      return result[0].content;
+      return (result[0] as any).content;
     } catch (error) {
       logger.error(`Failed to get flashcards for ${fileId}`, error);
       throw error;
@@ -332,7 +332,7 @@ export class FileRepository {
         [fileId],
       );
       if (result.length === 0) return null;
-      return result[0].content;
+      return (result[0] as any).content;
     } catch (error) {
       logger.error(`Failed to get quiz for ${fileId}`, error);
       throw error;

@@ -21,7 +21,7 @@ import { PDFEditingService } from "../../services/editor/PDFEditingService";
 import { fileRepository } from "../../repository/FileRepository";
 import { generateUUID } from "../../utils/uuid";
 
-type EditorScreenRouteProp = RouteProp<PDFViewerStackParamList, "EDITOR">;
+type EditorScreenRouteProp = RouteProp<PDFViewerStackParamList, 'Editor'>;
 
 type EditingAction = {
   id: string;
@@ -46,7 +46,7 @@ const ACTIONS: EditingAction[] = [
   {
     id: "split",
     title: "Split PDF",
-    icon: "scissors-outline",
+    icon: "cut-outline" as any,
     description: "Split a PDF by page ranges",
     requiresSplitRanges: true,
   },
@@ -268,7 +268,7 @@ export const EditorScreen: React.FC = () => {
             text: "View Files",
             onPress: () => {
               // Navigate to Files tab (we need to navigate to the main tab)
-              navigation.navigate("Files" as any);
+              navigation.navigate('Files' as never);
             },
           },
           { text: "OK" },

@@ -15,14 +15,14 @@ export class PDFEditingService {
   async mergePDFs(filePaths: string[], outputFileName: string = 'Merged.pdf'): Promise<string> {
     const mergedPdf = await PDFLib.PDFDocument.create();
     for (const path of filePaths) {
-      const fileBytes = await FileSystem.readAsStringAsync(path, { encoding: FileSystem.EncodingType.Base64 });
+      const fileBytes = await FileSystem.readAsStringAsync(path, { encoding: "base64" });
       const pdfDoc = await PDFLib.PDFDocument.load(fileBytes, { ignoreEncryption: true });
       const pages = await mergedPdf.copyPages(pdfDoc, pdfDoc.getPageIndices());
       pages.forEach(page => mergedPdf.addPage(page));
     }
-    const pdfBytes = await mergedPdf.save();
-    const outputPath = `${FileSystem.documentDirectory}${outputFileName}`;
-    await FileSystem.writeAsStringAsync(outputPath, pdfBytes, { encoding: FileSystem.EncodingType.Base64 });
+    const pdfBytes = await mergedPdf.saveAsBase64();
+    const outputPath = `${FileSystem.Paths.document?.uri || ""}${outputFileName}`;
+    await FileSystem.writeAsStringAsync(outputPath, pdfBytes, { encoding: "base64" });
     return outputPath;
   }
 
@@ -34,7 +34,7 @@ export class PDFEditingService {
    * @returns Array of URIs of the split PDFs.
    */
   async splitPDF(filePath: string, splits: { start: number; end: number }[], outputBaseName: string = 'Split'): Promise<string[]> {
-    const fileBytes = await FileSystem.readAsStringAsync(filePath, { encoding: FileSystem.EncodingType.Base64 });
+    const fileBytes = await FileSystem.readAsStringAsync(filePath, { encoding: "base64" });
     const sourcePdf = await PDFLib.PDFDocument.load(fileBytes, { ignoreEncryption: true });
     const outputPaths: string[] = [];
 
@@ -44,9 +44,9 @@ export class PDFEditingService {
       const pageIndices = Array.from({ length: end - start + 1 }, (_, idx) => start - 1 + idx);
       const pages = await newPdf.copyPages(sourcePdf, pageIndices);
       pages.forEach(page => newPdf.addPage(page));
-      const pdfBytes = await newPdf.save();
-      const outputPath = `${FileSystem.documentDirectory}${outputBaseName}_${i + 1}.pdf`;
-      await FileSystem.writeAsStringAsync(outputPath, pdfBytes, { encoding: FileSystem.EncodingType.Base64 });
+      const pdfBytes = await newPdf.saveAsBase64();
+      const outputPath = `${FileSystem.Paths.document?.uri || ""}${outputBaseName}_${i + 1}.pdf`;
+      await FileSystem.writeAsStringAsync(outputPath, pdfBytes, { encoding: "base64" });
       outputPaths.push(outputPath);
     }
     return outputPaths;
@@ -61,7 +61,7 @@ export class PDFEditingService {
    * @returns URI of the rotated PDF.
    */
   async rotatePDF(filePath: string, pageNumbers: number[], degrees: 90 | 180 | 270, outputFileName: string = 'Rotated.pdf'): Promise<string> {
-    const fileBytes = await FileSystem.readAsStringAsync(filePath, { encoding: FileSystem.EncodingType.Base64 });
+    const fileBytes = await FileSystem.readAsStringAsync(filePath, { encoding: "base64" });
     const pdfDoc = await PDFLib.PDFDocument.load(fileBytes, { ignoreEncryption: true });
     const pages = pdfDoc.getPages();
     const indices = pageNumbers.length === 0 ? pages.map((_, idx) => idx) : pageNumbers.map(n => n - 1);
@@ -70,9 +70,9 @@ export class PDFEditingService {
         pages[idx].setRotation(PDFLib.degrees(degrees));
       }
     }
-    const pdfBytes = await pdfDoc.save();
-    const outputPath = `${FileSystem.documentDirectory}${outputFileName}`;
-    await FileSystem.writeAsStringAsync(outputPath, pdfBytes, { encoding: FileSystem.EncodingType.Base64 });
+    const pdfBytes = await pdfDoc.saveAsBase64();
+    const outputPath = `${FileSystem.Paths.document?.uri || ""}${outputFileName}`;
+    await FileSystem.writeAsStringAsync(outputPath, pdfBytes, { encoding: "base64" });
     return outputPath;
   }
 
@@ -84,16 +84,16 @@ export class PDFEditingService {
    * @returns URI of the PDF with pages removed.
    */
   async deletePages(filePath: string, pageNumbers: number[], outputFileName: string = 'Deleted.pdf'): Promise<string> {
-    const fileBytes = await FileSystem.readAsStringAsync(filePath, { encoding: FileSystem.EncodingType.Base64 });
+    const fileBytes = await FileSystem.readAsStringAsync(filePath, { encoding: "base64" });
     const pdfDoc = await PDFLib.PDFDocument.load(fileBytes, { ignoreEncryption: true });
     const totalPages = pdfDoc.getPageCount();
     const deleteIndices = pageNumbers.map(n => n - 1).filter(i => i >= 0 && i < totalPages).sort((a, b) => b - a);
     for (const idx of deleteIndices) {
       pdfDoc.removePage(idx);
     }
-    const pdfBytes = await pdfDoc.save();
-    const outputPath = `${FileSystem.documentDirectory}${outputFileName}`;
-    await FileSystem.writeAsStringAsync(outputPath, pdfBytes, { encoding: FileSystem.EncodingType.Base64 });
+    const pdfBytes = await pdfDoc.saveAsBase64();
+    const outputPath = `${FileSystem.Paths.document?.uri || ""}${outputFileName}`;
+    await FileSystem.writeAsStringAsync(outputPath, pdfBytes, { encoding: "base64" });
     return outputPath;
   }
 
@@ -105,15 +105,15 @@ export class PDFEditingService {
    * @returns URI of the reordered PDF.
    */
   async reorderPages(filePath: string, newOrder: number[], outputFileName: string = 'Reordered.pdf'): Promise<string> {
-    const fileBytes = await FileSystem.readAsStringAsync(filePath, { encoding: FileSystem.EncodingType.Base64 });
+    const fileBytes = await FileSystem.readAsStringAsync(filePath, { encoding: "base64" });
     const sourcePdf = await PDFLib.PDFDocument.load(fileBytes, { ignoreEncryption: true });
     const newPdf = await PDFLib.PDFDocument.create();
     const pageIndices = newOrder.map(n => n - 1);
     const pages = await newPdf.copyPages(sourcePdf, pageIndices);
     pages.forEach(page => newPdf.addPage(page));
-    const pdfBytes = await newPdf.save();
-    const outputPath = `${FileSystem.documentDirectory}${outputFileName}`;
-    await FileSystem.writeAsStringAsync(outputPath, pdfBytes, { encoding: FileSystem.EncodingType.Base64 });
+    const pdfBytes = await newPdf.saveAsBase64();
+    const outputPath = `${FileSystem.Paths.document?.uri || ""}${outputFileName}`;
+    await FileSystem.writeAsStringAsync(outputPath, pdfBytes, { encoding: "base64" });
     return outputPath;
   }
 }

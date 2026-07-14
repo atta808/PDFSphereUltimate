@@ -52,8 +52,8 @@ export const QuizScreen: React.FC = () => {
     setIsLoading(true);
     try {
       const useCase = new GenerateQuizUseCase();
-      const quiz = await useCase.execute(fileId);
-      setQuestions(quiz);
+      const quizOutput = await useCase.execute({ fileId });
+      setQuestions(quizOutput.questions);
       setCurrentIndex(0);
       setSelectedOption(null);
       setShowResult(false);

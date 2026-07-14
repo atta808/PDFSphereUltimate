@@ -49,32 +49,32 @@ export const SettingsScreen: React.FC = () => {
       id: 'appearance',
       title: 'Appearance',
       icon: 'color-palette-outline',
-      route: Routes.SETTINGS_APPEARANCE,
+      route: Routes.SETTINGS_APPEARANCE as any,
     },
     {
       id: 'language',
       title: 'Language',
       icon: 'language-outline',
-      route: Routes.SETTINGS_LANGUAGE,
+      route: Routes.SETTINGS_LANGUAGE as any,
     },
     {
       id: 'ai',
       title: 'AI Settings',
       icon: 'sparkles-outline',
-      route: Routes.SETTINGS_AI,
+      route: Routes.SETTINGS_AI as any,
       badge: isAIConfigured ? 'Connected' : 'Setup Required',
     },
     {
       id: 'storage',
       title: 'Storage',
       icon: 'folder-outline',
-      route: Routes.SETTINGS_STORAGE,
+      route: Routes.SETTINGS_STORAGE as any,
     },
     {
       id: 'about',
       title: 'About',
       icon: 'information-circle-outline',
-      route: Routes.SETTINGS_ABOUT,
+      route: Routes.SETTINGS_ABOUT as any,
     },
   ];
 
