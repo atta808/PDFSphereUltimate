@@ -261,13 +261,24 @@ export function setupGlobalErrorHandlers(): void {
     originalErrorHandler(error, isFatal);
   });
 
-  // Handle unhandled promise rejections
-  const originalUnhandledRejection = global?.onerror?.['unhandledrejection'] || (() => {});
-  // @ts-ignore - React Native specific
-  global?.onerror?.['unhandledrejection'] = (error: Error) => {
-    handleError(error, 'Unhandled promise rejection.');
-    originalUnhandledRejection(error);
+  // Handle unhandled promise rejections without assigning through an optional chain.
+  // Optional chaining is not valid on the left-hand side of an assignment and
+  // causes Metro/Babel to fail before the app can start.
+  const globalObject = global as typeof globalThis & {
+    onerror?: {
+      [key: string]: ((error: Error) => void) | undefined;
+    };
   };
+  const onError = globalObject.onerror;
+
+  if (onError) {
+    const originalUnhandledRejection = onError['unhandledrejection'] || (() => {});
+
+    onError['unhandledrejection'] = (error: Error) => {
+      handleError(error, 'Unhandled promise rejection.');
+      originalUnhandledRejection(error);
+    };
+  }
 
   logger.info('Global error handlers installed.');
 }
