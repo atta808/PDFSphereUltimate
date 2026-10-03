@@ -1,4 +1,4 @@
-import * as FileSystem from "expo-file-system";
+import { File } from "expo-file-system";
 import { logger } from "../../utils/logger";
 import { fileRepository } from "../../repository/FileRepository";
 import { WebViewBridge } from "./WebViewBridge";
@@ -76,15 +76,13 @@ export class PdfJsExtractor implements ITextExtractionProvider {
 
     try {
       // Check if file exists
-      const fileInfo = await FileSystem.getInfoAsync(pdfUri);
-      if (!fileInfo.exists) {
+      const file = new File(pdfUri);
+      if (!file.exists) {
         throw new Error(`PDF file not found: ${pdfUri}`);
       }
 
       // Read file as base64
-      const base64 = await FileSystem.readAsStringAsync(pdfUri, {
-        encoding: "base64",
-      });
+      const base64 = await file.base64();
 
       // Send to WebView for extraction
       const result = await this.webViewBridge!.sendMessageAndWaitForResponse({
