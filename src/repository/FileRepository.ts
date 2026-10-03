@@ -6,12 +6,111 @@ import { logger } from "../utils/logger";
 const db = SQLite.openDatabaseSync("pdfsphere.db");
 
 export class FileRepository {
+  private readonly ready: Promise<void>;
+
+  constructor() {
+    this.ready = this.initialize();
+  }
+
+  private async initialize(): Promise<void> {
+    await db.execAsync(`
+      PRAGMA journal_mode = WAL;
+      CREATE TABLE IF NOT EXISTS files (
+        id TEXT PRIMARY KEY NOT NULL,
+        name TEXT NOT NULL,
+        uri TEXT,
+        size INTEGER NOT NULL DEFAULT 0,
+        pages INTEGER NOT NULL DEFAULT 0,
+        lastModified TEXT NOT NULL,
+        isFavorite INTEGER NOT NULL DEFAULT 0,
+        folderId TEXT,
+        tags TEXT,
+        metadata_json TEXT
+      );
+      CREATE TABLE IF NOT EXISTS extracted_text (
+        file_id TEXT NOT NULL,
+        content TEXT NOT NULL,
+        version TEXT NOT NULL DEFAULT 'v1',
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (file_id, version)
+      );
+      CREATE TABLE IF NOT EXISTS ai_metadata (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        file_id TEXT NOT NULL,
+        feature_type TEXT NOT NULL,
+        content TEXT NOT NULL,
+        model_version TEXT,
+        prompt_version TEXT,
+        created_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS translations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        file_id TEXT NOT NULL,
+        target_language TEXT NOT NULL,
+        content TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS flashcards (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        file_id TEXT NOT NULL,
+        content TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS quiz_cache (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        file_id TEXT NOT NULL,
+        content TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS chunks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        file_id TEXT NOT NULL,
+        chunk_index INTEGER NOT NULL,
+        content TEXT NOT NULL,
+        page_numbers TEXT,
+        extraction_version TEXT,
+        UNIQUE(file_id, chunk_index)
+      );
+      CREATE TABLE IF NOT EXISTS conversations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        file_id TEXT NOT NULL,
+        title TEXT NOT NULL DEFAULT 'New Chat',
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        message_count INTEGER NOT NULL DEFAULT 0,
+        archived INTEGER NOT NULL DEFAULT 0,
+        pinned INTEGER NOT NULL DEFAULT 0
+      );
+      CREATE TABLE IF NOT EXISTS messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        conversation_id INTEGER NOT NULL,
+        role TEXT NOT NULL,
+        content TEXT NOT NULL,
+        citations TEXT,
+        model_version TEXT,
+        prompt_version TEXT,
+        retrieval_version TEXT,
+        chunk_ids TEXT,
+        interrupted INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_files_last_modified ON files(lastModified DESC);
+      CREATE INDEX IF NOT EXISTS idx_extracted_text_file ON extracted_text(file_id);
+      CREATE INDEX IF NOT EXISTS idx_ai_metadata_file ON ai_metadata(file_id, feature_type);
+      CREATE INDEX IF NOT EXISTS idx_translations_file ON translations(file_id, target_language);
+      CREATE INDEX IF NOT EXISTS idx_chunks_file ON chunks(file_id, chunk_index);
+      CREATE INDEX IF NOT EXISTS idx_conversations_file ON conversations(file_id, updated_at);
+      CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id, created_at);
+    `);
+  }
+
   // ==================== Core File Operations ====================
 
   /**
    * Get all files from the database.
    */
   async getAllFiles(): Promise<FileModel[]> {
+    await this.ready;
     try {
       const result = await db.getAllAsync(`
         SELECT id, name, uri, size, pages, lastModified, isFavorite, folderId, tags, metadata_json
@@ -29,6 +128,7 @@ export class FileRepository {
    * Get a single file by ID.
    */
   async getFileById(id: string): Promise<FileModel | undefined> {
+    await this.ready;
     try {
       const result = await db.getAllAsync(
         "SELECT id, name, uri, size, pages, lastModified, isFavorite, folderId, tags, metadata_json FROM files WHERE id = ?",
@@ -46,6 +146,7 @@ export class FileRepository {
    * Insert or update a file.
    */
   async saveFile(file: FileModel): Promise<void> {
+    await this.ready;
     try {
       await db.runAsync(
         `INSERT OR REPLACE INTO files (id, name, uri, size, pages, lastModified, isFavorite, folderId, tags, metadata_json)
@@ -73,6 +174,7 @@ export class FileRepository {
    * Delete a file by ID.
    */
   async deleteFile(id: string): Promise<void> {
+    await this.ready;
     try {
       // Also delete associated extracted text, AI caches, etc.
       await db.runAsync("DELETE FROM files WHERE id = ?", [id]);
@@ -90,6 +192,7 @@ export class FileRepository {
    * Toggle favorite status.
    */
   async toggleFavorite(id: string): Promise<void> {
+    await this.ready;
     try {
       await db.runAsync(
         "UPDATE files SET isFavorite = CASE WHEN isFavorite = 1 THEN 0 ELSE 1 END WHERE id = ?",
@@ -105,6 +208,7 @@ export class FileRepository {
    * Search files by name (partial match) or metadata.
    */
   async searchFiles(query: string): Promise<FileModel[]> {
+    await this.ready;
     try {
       const result = await db.getAllAsync(
         `SELECT id, name, uri, size, pages, lastModified, isFavorite, folderId, tags, metadata_json
@@ -124,6 +228,7 @@ export class FileRepository {
    * Get recent files (limit).
    */
   async getRecentFiles(limit: number = 5): Promise<FileModel[]> {
+    await this.ready;
     try {
       const result = await db.getAllAsync(
         `SELECT id, name, uri, size, pages, lastModified, isFavorite, folderId, tags, metadata_json
@@ -149,6 +254,7 @@ export class FileRepository {
     text: string,
     version: string = "v1",
   ): Promise<void> {
+    await this.ready;
     try {
       await db.runAsync(
         `INSERT OR REPLACE INTO extracted_text (file_id, content, version, updated_at)
@@ -165,6 +271,7 @@ export class FileRepository {
    * Get extracted text for a file.
    */
   async getExtractedText(fileId: string): Promise<string | null> {
+    await this.ready;
     try {
       const result = await db.getAllAsync(
         "SELECT content FROM extracted_text WHERE file_id = ? ORDER BY updated_at DESC LIMIT 1",
@@ -189,6 +296,7 @@ export class FileRepository {
     modelVersion: string = "deepseek-chat",
     promptVersion: string = "v1.0",
   ): Promise<void> {
+    await this.ready;
     try {
       await db.runAsync(
         `INSERT OR REPLACE INTO ai_metadata (file_id, feature_type, content, model_version, prompt_version, created_at)
@@ -212,6 +320,7 @@ export class FileRepository {
    * Get cached summary for a file.
    */
   async getSummary(fileId: string): Promise<string | null> {
+    await this.ready;
     try {
       const result = await db.getAllAsync(
         `SELECT content FROM ai_metadata
@@ -237,6 +346,7 @@ export class FileRepository {
     targetLanguage: string,
     content: string,
   ): Promise<void> {
+    await this.ready;
     try {
       await db.runAsync(
         `INSERT OR REPLACE INTO translations (file_id, target_language, content, created_at)
@@ -256,6 +366,7 @@ export class FileRepository {
     fileId: string,
     targetLanguage: string,
   ): Promise<string | null> {
+    await this.ready;
     try {
       const result = await db.getAllAsync(
         "SELECT content FROM translations WHERE file_id = ? AND target_language = ? ORDER BY created_at DESC LIMIT 1",
@@ -275,6 +386,7 @@ export class FileRepository {
    * Save flashcards for a file.
    */
   async saveFlashcards(fileId: string, content: string): Promise<void> {
+    await this.ready;
     try {
       await db.runAsync(
         `INSERT OR REPLACE INTO flashcards (file_id, content, created_at)
@@ -291,6 +403,7 @@ export class FileRepository {
    * Get cached flashcards for a file.
    */
   async getFlashcards(fileId: string): Promise<string | null> {
+    await this.ready;
     try {
       const result = await db.getAllAsync(
         "SELECT content FROM flashcards WHERE file_id = ? ORDER BY created_at DESC LIMIT 1",
@@ -310,6 +423,7 @@ export class FileRepository {
    * Save quiz for a file.
    */
   async saveQuiz(fileId: string, content: string): Promise<void> {
+    await this.ready;
     try {
       await db.runAsync(
         `INSERT OR REPLACE INTO quiz_cache (file_id, content, created_at)
@@ -326,6 +440,7 @@ export class FileRepository {
    * Get cached quiz for a file.
    */
   async getQuiz(fileId: string): Promise<string | null> {
+    await this.ready;
     try {
       const result = await db.getAllAsync(
         "SELECT content FROM quiz_cache WHERE file_id = ? ORDER BY created_at DESC LIMIT 1",

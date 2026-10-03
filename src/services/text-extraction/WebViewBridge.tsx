@@ -1,6 +1,7 @@
 import React from 'react';
 import { WebView } from 'react-native-webview';
 import { logger } from '../../utils/logger';
+import { PDF_JS_EXTRACTOR_HTML } from './pdfJsHtml';
 
 type MessagePayload = {
   type: string;
@@ -47,7 +48,7 @@ export class WebViewBridge {
     return (
       <WebView
         ref={this.webViewRef}
-        source={require('../../../assets/pdfjs-extractor.html')}
+        source={{ html: PDF_JS_EXTRACTOR_HTML, baseUrl: 'https://cdnjs.cloudflare.com' }}
         onMessage={this.handleMessage}
         onLoadEnd={this.onLoadEnd}
         javaScriptEnabled={true}

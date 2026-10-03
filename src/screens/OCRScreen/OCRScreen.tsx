@@ -17,7 +17,6 @@ import { useNavigation } from "@react-navigation/native";
 import { MainTabNavigationProp } from "../../navigation/types";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
-import { OCREngine } from "../../services/ocr/OCREngine";
 
 const LANGUAGES = [
   { code: "en", label: "English" },
@@ -41,8 +40,6 @@ export const OCRScreen: React.FC = () => {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [languageHint, setLanguageHint] = useState<string>("en");
   const [showLanguagePicker, setShowLanguagePicker] = useState<boolean>(false);
-
-  const ocrEngine = new OCREngine();
 
   // Pick image from gallery
   const pickImage = async () => {
@@ -99,7 +96,8 @@ export const OCRScreen: React.FC = () => {
     setIsLoading(true);
     setExtractedText("");
     try {
-      const result = await ocrEngine.extractText(imageUri, languageHint);
+      const { OCREngine } = await import("../../services/ocr/OCREngine");
+      const result = await new OCREngine().extractText(imageUri, languageHint);
       setExtractedText(result.text);
     } catch (error: any) {
       Alert.alert(

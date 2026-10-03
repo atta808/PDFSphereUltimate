@@ -9,6 +9,7 @@ import { AppearanceScreen } from '../screens/Settings/AppearanceScreen';
 import { LanguageScreen } from '../screens/Settings/LanguageScreen';
 import { StorageScreen } from '../screens/Settings/StorageScreen';
 import { AISettingsScreen } from '../screens/Settings/AISettingsScreen';
+import { AboutScreen } from '../screens/Settings/AboutScreen';
 
 const Stack = createStackNavigator<SettingsStackParamList>();
 
@@ -25,7 +26,7 @@ export const SettingsStack: React.FC = () => {
       <Stack.Screen name={Routes.SETTINGS_LANGUAGE} component={LanguageScreen as any} />
       <Stack.Screen name={Routes.SETTINGS_STORAGE} component={StorageScreen as any} />
       <Stack.Screen name={Routes.SETTINGS_AI} component={AISettingsScreen as any} />
-      {/* OCR Settings component needs to be created or removed from navigation. Creating a placeholder later or removing it for now. */}
+      <Stack.Screen name={Routes.SETTINGS_ABOUT} component={AboutScreen as any} />
     </Stack.Navigator>
   );
 };

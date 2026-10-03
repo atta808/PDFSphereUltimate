@@ -11,7 +11,6 @@
   "dependencies": {
     "@adnsistemas/pdf-lib": "^2.9.1",
     "@expo/vector-icons": "^15.0.2",
-    "@kishannareshpal/expo-pdf": "^0.3.2",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-navigation/bottom-tabs": "^7.18.8",
     "@react-navigation/native": "^7.3.8",
@@ -31,12 +30,10 @@
     "expo-text-extractor": "^2.0.0",
     "react": "19.2.0",
     "react-native": "0.83.6",
-    "react-native-document-scanner-ai": "^2.5.6",
     "react-native-gesture-handler": "~2.30.0",
     "react-native-reanimated": "4.2.1",
     "react-native-safe-area-context": "~5.6.2",
     "react-native-screens": "~4.23.0",
-    "react-native-vision-camera": "^5.1.0",
     "react-native-webview": "13.16.0",
     "react-native-worklets": "0.7.4"
   },

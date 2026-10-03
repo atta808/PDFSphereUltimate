@@ -1,147 +1,143 @@
-import React, { useState, useRef, useCallback, useEffect } from "react";
+import React, { useCallback, useRef, useState } from "react";
 import {
-  View,
-  Text,
-  StyleSheet,
-  SafeAreaView,
-  TouchableOpacity,
-  Alert,
   ActivityIndicator,
-  StatusBar,
-  Dimensions,
+  Alert,
+  FlatList,
+  Image,
+  SafeAreaView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
-import { useTheme } from "../../theme/ThemeContext";
-import { useNavigation } from "@react-navigation/native";
-import { MainTabNavigationProp } from "../../navigation/types";
+import { CameraView, useCameraPermissions } from "expo-camera";
+import * as ImagePicker from "expo-image-picker";
+import { File, Paths } from "expo-file-system";
+import { PDFDocument } from "@adnsistemas/pdf-lib";
 import { Ionicons } from "@expo/vector-icons";
-import * as DocumentScannerModule from 'react-native-document-scanner-ai';
-const DocumentScanner = (DocumentScannerModule as any).default || DocumentScannerModule;
-import { useCameraPermission, useMicrophonePermission } from 'react-native-vision-camera';
+import { useNavigation } from "@react-navigation/native";
+
+import { useTheme } from "../../theme/ThemeContext";
+import { Routes } from "../../constants/routes";
+import { MainTabNavigationProp } from "../../navigation/types";
 import { fileRepository } from "../../repository/FileRepository";
 import { generateUUID } from "../../utils/uuid";
-import * as FileSystem from "expo-file-system";
 
-const { width, height } = Dimensions.get("window");
+type ScanImage = {
+  uri: string;
+  width: number;
+  height: number;
+};
 
 export const ScannerScreen: React.FC = () => {
   const { theme } = useTheme();
   const navigation = useNavigation<MainTabNavigationProp>();
+  const cameraRef = useRef<CameraView | null>(null);
+  const [permission, requestPermission] = useCameraPermissions();
+  const [images, setImages] = useState<ScanImage[]>([]);
+  const [isCameraReady, setIsCameraReady] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [flash, setFlash] = useState(false);
 
-  const scannerRef = useRef<any>(null);
-  const [isScanning, setIsScanning] = useState<boolean>(false);
-  const [hasPermission, setHasPermission] = useState<boolean | null>(null);
-  const [isAutoCapture, setIsAutoCapture] = useState<boolean>(true);
-  const [capturedImages, setCapturedImages] = useState<string[]>([]);
-  const [isProcessing, setIsProcessing] = useState<boolean>(false);
+  const addImages = useCallback((newImages: ScanImage[]) => {
+    setImages((current) => [...current, ...newImages]);
+  }, []);
 
-  // Request permissions on mount
-  const { hasPermission: cameraPermission, requestPermission: reqCameraPermission } = useCameraPermission();
-  const { hasPermission: micPermission, requestPermission: reqMicPermission } = useMicrophonePermission();
-  const checkPermissions = useCallback(async () => {
+  const capturePage = useCallback(async () => {
+    if (!cameraRef.current || !isCameraReady) return;
+
     try {
-      let camGranted = cameraPermission;
-      if (!camGranted) {
-        camGranted = await reqCameraPermission();
-      }
-      let micGranted = micPermission;
-      if (!micGranted) {
-        micGranted = await reqMicPermission();
-      }
-      setHasPermission(!!camGranted);
-      if (!camGranted) {
-        Alert.alert("Permission Required", "Camera access is required to scan documents. Please enable it in settings.", [{ text: "OK" }]);
+      const result = await cameraRef.current.takePictureAsync({
+        quality: 0.9,
+        skipProcessing: false,
+      });
+
+      if (result?.uri) {
+        addImages([
+          {
+            uri: result.uri,
+            width: result.width,
+            height: result.height,
+          },
+        ]);
       }
     } catch (error) {
-      console.error("Permission error:", error);
-      setHasPermission(false);
+      console.error("Camera capture failed:", error);
+      Alert.alert("Capture failed", "Could not capture the page. Please try again.");
     }
-  }, [cameraPermission, micPermission, reqCameraPermission, reqMicPermission]);
+  }, [addImages, isCameraReady]);
 
-  useEffect(() => {
-    checkPermissions();
-  }, []);
+  const importPages = useCallback(async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images"],
+        allowsMultipleSelection: true,
+        quality: 1,
+      });
 
-  // Handle document detection
-  const onDocumentDetected = useCallback((detected: boolean) => {
-    // The library provides a boolean indicating if a document is in frame
-    // We can use this to show a visual indicator – currently handled by the library
-  }, []);
+      if (!result.canceled) {
+        addImages(
+          result.assets.map((asset) => ({
+            uri: asset.uri,
+            width: asset.width,
+            height: asset.height,
+          })),
+        );
+      }
+    } catch (error) {
+      console.error("Image import failed:", error);
+      Alert.alert("Import failed", "Could not import the selected images.");
+    }
+  }, [addImages]);
 
-  // Handle successful capture
-  const onCapture = useCallback(
-    async (capturedImageUri: string) => {
-      setIsScanning(false);
-      setCapturedImages((prev) => [...prev, capturedImageUri]);
+  const removePage = (index: number) => {
+    setImages((current) => current.filter((_, i) => i !== index));
+  };
 
-      // Show confirmation with options
-      Alert.alert(
-        "Document Captured",
-        "What would you like to do with this scanned document?",
-        [
-          {
-            text: "Continue Scanning",
-            onPress: () => {
-              // Reset scanner and continue
-              scannerRef.current?.reset();
-              setIsScanning(true);
-            },
-          },
-          {
-            text: "Create PDF",
-            onPress: async () => {
-              await processCapturedImages([
-                ...capturedImages,
-                capturedImageUri,
-              ]);
-            },
-          },
-          {
-            text: "View Preview",
-            onPress: () => {
-              // Navigate to a preview screen (optional)
-              Alert.alert("Preview", "Preview screen coming soon!");
-            },
-          },
-          {
-            text: "Cancel",
-            style: "cancel",
-            onPress: () => {
-              // Remove the last image from list if cancelled
-              setCapturedImages((prev) => prev.slice(0, -1));
-            },
-          },
-        ],
-      );
-    },
-    [capturedImages],
-  );
-
-  // Process captured images into a PDF
-  const processCapturedImages = async (images: string[]) => {
+  const createPdf = useCallback(async () => {
     if (images.length === 0) {
-      Alert.alert("No Images", "No images to process.");
+      Alert.alert("No pages", "Capture or import at least one page first.");
       return;
     }
 
     setIsProcessing(true);
+
     try {
-      // In a full implementation, you would use pdf-lib to create a PDF from images
-      // For now, we'll save the images to the repository as files
-      // In the future, you'd use a PDF creation service.
+      const pdf = await PDFDocument.create();
 
-      // Create a file name
-      const fileName = `Scan_${new Date().toISOString().slice(0, 10)}.pdf`;
+      for (const image of images) {
+        const source = new File(image.uri);
+        const bytes = await source.bytes();
+        const isPng = /\.png$/i.test(image.uri);
+        const embedded = isPng
+          ? await pdf.embedPng(bytes)
+          : await pdf.embedJpg(bytes);
+
+        const page = pdf.addPage([image.width, image.height]);
+        page.drawImage(embedded, {
+          x: 0,
+          y: 0,
+          width: image.width,
+          height: image.height,
+        });
+      }
+
+      const pdfBytes = await pdf.save();
       const fileId = generateUUID();
+      const fileName = `Scan_${new Date().toISOString().replace(/[:.]/g, "-")}.pdf`;
+      const output = new File(Paths.document, fileName);
 
-      // Simulate PDF creation – in reality, you'd use PDFCreationService
-      const pdfUri = `${(FileSystem.Paths.document?.uri || 'file:///data/user/0/com.pdfsphere.app/files/')}${fileName}`;
+      if (output.exists) {
+        output.delete();
+      }
+      output.create({ overwrite: true });
+      output.write(pdfBytes);
 
-      // Save file to repository
-      const file = {
+      await fileRepository.saveFile({
         id: fileId,
         name: fileName,
-        uri: pdfUri,
-        size: 0,
+        uri: output.uri,
+        size: output.size,
         pages: images.length,
         lastModified: new Date(),
         isFavorite: false,
@@ -150,346 +146,259 @@ export const ScannerScreen: React.FC = () => {
           createdAt: new Date(),
           source: "scanner",
         },
-      };
-      await fileRepository.saveFile(file);
+      });
 
-      // Show success and navigate to PDF viewer
-      Alert.alert("PDF Created", `Created PDF with ${images.length} pages.`, [
+      setImages([]);
+      Alert.alert("PDF created", `${fileName} was saved to PDFSphere.`, [
         {
-          text: "View PDF",
-          onPress: () => {
-            // Navigate to PDF viewer
-            navigation.navigate('PDFViewer' as any, { screen: 'PDFViewer', params: { fileId, filePath: pdfUri } } as any);
-          },
+          text: "Open PDF",
+          onPress: () =>
+            navigation.navigate(Routes.PDF_VIEWER, {
+              screen: Routes.PDF_VIEWER,
+              params: { fileId, filePath: output.uri },
+            }),
         },
-        {
-          text: "OK",
-          style: "cancel",
-        },
+        { text: "Done", style: "cancel" },
       ]);
-
-      // Clear captured images
-      setCapturedImages([]);
     } catch (error) {
-      console.error("Failed to create PDF:", error);
-      Alert.alert("Error", "Failed to create PDF. Please try again.");
+      console.error("PDF creation failed:", error);
+      Alert.alert(
+        "PDF creation failed",
+        error instanceof Error ? error.message : "Could not create the PDF.",
+      );
     } finally {
       setIsProcessing(false);
     }
-  };
+  }, [images, navigation]);
 
-  // Toggle auto-capture
-  const toggleAutoCapture = () => {
-    setIsAutoCapture((prev) => !prev);
-  };
-
-  // Manual capture
-  const handleManualCapture = () => {
-    if (scannerRef.current && !isAutoCapture) {
-      scannerRef.current?.capture();
-    }
-  };
-
-  // Reset scanner session
-  const resetSession = () => {
-    setCapturedImages([]);
-    scannerRef.current?.reset();
-    setIsScanning(true);
-  };
-
-  // Cancel and go back
-  const handleBack = () => {
-    if (capturedImages.length > 0) {
-      Alert.alert(
-        "Cancel Scan",
-        "You have captured images. Are you sure you want to cancel?",
-        [
-          { text: "Continue Scanning", style: "cancel" },
-          {
-            text: "Cancel",
-            style: "destructive",
-            onPress: () => {
-              setCapturedImages([]);
-              navigation.goBack();
-            },
-          },
-        ],
-      );
-    } else {
-      navigation.goBack();
-    }
-  };
-
-  // If permission is not yet determined
-  if (hasPermission === null) {
+  if (!permission) {
     return (
-      <View
-        style={[styles.container, { backgroundColor: theme.colors.background }]}
-      >
+      <SafeAreaView style={[styles.center, { backgroundColor: theme.colors.background }]}>
         <ActivityIndicator size="large" color={theme.colors.primary} />
-        <Text
-          style={[styles.permissionText, { color: theme.colors.textSecondary }]}
-        >
-          Requesting camera permission...
-        </Text>
-      </View>
+      </SafeAreaView>
     );
   }
 
-  // If permission denied
-  if (hasPermission === false) {
+  if (!permission.granted) {
     return (
-      <View
-        style={[styles.container, { backgroundColor: theme.colors.background }]}
-      >
-        <Ionicons
-          name="camera-outline"
-          size={64}
-          color={theme.colors.iconSecondary}
-        />
-        <Text style={[styles.permissionText, { color: theme.colors.text }]}>
+      <SafeAreaView style={[styles.center, { backgroundColor: theme.colors.background }]}>
+        <Ionicons name="camera-outline" size={64} color={theme.colors.iconSecondary} />
+        <Text style={[styles.permissionTitle, { color: theme.colors.text }]}>
           Camera permission required
         </Text>
+        <Text style={[styles.permissionText, { color: theme.colors.textSecondary }]}>
+          PDFSphere needs camera access to scan document pages.
+        </Text>
         <TouchableOpacity
-          style={[
-            styles.permissionButton,
-            { backgroundColor: theme.colors.primary },
-          ]}
-          onPress={checkPermissions}
+          style={[styles.primaryButton, { backgroundColor: theme.colors.primary }]}
+          onPress={requestPermission}
         >
-          <Text style={styles.permissionButtonText}>Grant Permission</Text>
+          <Text style={styles.primaryButtonText}>Grant Camera Permission</Text>
         </TouchableOpacity>
-      </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView
-      style={[styles.safeArea, { backgroundColor: theme.colors.background }]}
-    >
-      <StatusBar barStyle="light-content" translucent />
-
-      {/* Scanner View */}
-      <View style={styles.scannerContainer}>
-        <DocumentScanner
-          ref={scannerRef}
-          style={styles.scanner}
-          onDocumentDetected={onDocumentDetected}
-          onCapture={onCapture}
-          autoCapture={isAutoCapture}
-          captureQuality={0.9}
-          enableFlash={false}
-          showOverlay={true}
-          overlayColor="rgba(76, 175, 80, 0.2)"
-          overlayEdgeColor={theme.colors.primary}
-          edgeDetectionMode={1} // 0 = fast, 1 = accurate, 2 = balanced
-          onError={(error) => {
-            console.error("DocumentScanner error:", error);
-            Alert.alert(
-              "Scanner Error",
-              "An error occurred while scanning. Please try again.",
-            );
-          }}
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: "#000" }]}>
+      <View style={styles.cameraArea}>
+        <CameraView
+          ref={cameraRef}
+          style={StyleSheet.absoluteFill}
+          facing="back"
+          enableTorch={flash}
+          onCameraReady={() => setIsCameraReady(true)}
         />
-      </View>
 
-      {/* Overlay Controls */}
-      <View style={styles.controlsOverlay}>
-        {/* Top Controls */}
-        <View style={styles.topControls}>
-          <TouchableOpacity
-            style={[styles.iconButton, { backgroundColor: "rgba(0,0,0,0.6)" }]}
-            onPress={handleBack}
-          >
-            <Ionicons name="close" size={28} color="white" />
+        <View style={styles.topBar}>
+          <TouchableOpacity style={styles.circleButton} onPress={() => navigation.goBack()}>
+            <Ionicons name="close" size={26} color="white" />
           </TouchableOpacity>
-
+          <Text style={styles.title}>Scan Document</Text>
           <TouchableOpacity
-            style={[styles.iconButton, { backgroundColor: "rgba(0,0,0,0.6)" }]}
-            onPress={toggleAutoCapture}
+            style={styles.circleButton}
+            onPress={() => setFlash((current) => !current)}
           >
-            <Ionicons
-              name={isAutoCapture ? "camera" : "camera-outline"}
-              size={24}
-              color="white"
-            />
-            <Text style={styles.controlLabel}>
-              {isAutoCapture ? "Auto" : "Manual"}
-            </Text>
+            <Ionicons name={flash ? "flash" : "flash-off"} size={22} color="white" />
           </TouchableOpacity>
         </View>
 
-        {/* Capture Count */}
-        {capturedImages.length > 0 && (
-          <View
-            style={[
-              styles.captureCount,
-              { backgroundColor: "rgba(0,0,0,0.7)" },
-            ]}
-          >
-            <Ionicons name="images" size={18} color="white" />
-            <Text style={styles.captureCountText}>{capturedImages.length}</Text>
-          </View>
-        )}
+        <View style={styles.guide}>
+          <View style={styles.cornerTL} />
+          <View style={styles.cornerTR} />
+          <View style={styles.cornerBL} />
+          <View style={styles.cornerBR} />
+        </View>
 
-        {/* Bottom Controls */}
-        <View style={styles.bottomControls}>
-          {!isAutoCapture && (
-            <TouchableOpacity
-              style={[styles.captureButton, { borderColor: "white" }]}
-              onPress={handleManualCapture}
-            >
-              <View style={styles.captureButtonInner} />
-            </TouchableOpacity>
-          )}
-
-          {/* Gallery/Import button (future) */}
-          <TouchableOpacity
-            style={[styles.iconButton, { backgroundColor: "rgba(0,0,0,0.6)" }]}
-            onPress={() => {
-              Alert.alert("Import from Gallery", "Feature coming soon.");
-            }}
-          >
-            <Ionicons name="images-outline" size={24} color="white" />
+        <View style={styles.bottomBar}>
+          <TouchableOpacity style={styles.sideButton} onPress={importPages}>
+            <Ionicons name="images-outline" size={28} color="white" />
+            <Text style={styles.sideButtonText}>Gallery</Text>
           </TouchableOpacity>
 
-          {/* Done button – process all captures */}
-          {capturedImages.length > 0 && (
+          <TouchableOpacity
+            style={styles.shutterOuter}
+            onPress={capturePage}
+            disabled={!isCameraReady || isProcessing}
+          >
+            <View style={styles.shutterInner} />
+          </TouchableOpacity>
+
+          <View style={styles.sideButton}>
+            <Ionicons name="documents-outline" size={24} color="white" />
+            <Text style={styles.sideButtonText}>{images.length} pages</Text>
+          </View>
+        </View>
+      </View>
+
+      {images.length > 0 && (
+        <View style={[styles.pagesPanel, { backgroundColor: theme.colors.background }]}>
+          <View style={styles.panelHeader}>
+            <Text style={[styles.panelTitle, { color: theme.colors.text }]}>
+              Pages ({images.length})
+            </Text>
             <TouchableOpacity
-              style={[
-                styles.doneButton,
-                { backgroundColor: theme.colors.primary },
-              ]}
-              onPress={async () => {
-                await processCapturedImages(capturedImages);
-              }}
+              style={[styles.createButton, { backgroundColor: theme.colors.primary }]}
+              onPress={createPdf}
               disabled={isProcessing}
             >
               {isProcessing ? (
                 <ActivityIndicator color="white" size="small" />
               ) : (
                 <>
-                  <Ionicons name="checkmark" size={20} color="white" />
-                  <Text style={styles.doneButtonText}>Done</Text>
+                  <Ionicons name="document-text-outline" size={18} color="white" />
+                  <Text style={styles.createButtonText}>Create PDF</Text>
                 </>
               )}
             </TouchableOpacity>
-          )}
+          </View>
+
+          <FlatList
+            horizontal
+            data={images}
+            keyExtractor={(item, index) => `${item.uri}-${index}`}
+            contentContainerStyle={styles.thumbnailList}
+            renderItem={({ item, index }) => (
+              <View style={styles.thumbnailWrapper}>
+                <Image source={{ uri: item.uri }} style={styles.thumbnail} />
+                <View style={styles.thumbnailNumber}>
+                  <Text style={styles.thumbnailNumberText}>{index + 1}</Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.removeButton}
+                  onPress={() => removePage(index)}
+                >
+                  <Ionicons name="close" size={16} color="white" />
+                </TouchableOpacity>
+              </View>
+            )}
+          />
         </View>
-      </View>
+      )}
     </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-  },
-  container: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 20,
-  },
-  scannerContainer: {
-    flex: 1,
-    backgroundColor: "#000",
-  },
-  scanner: {
-    flex: 1,
-    width: "100%",
-    height: "100%",
-  },
-  controlsOverlay: {
+  safeArea: { flex: 1 },
+  cameraArea: { flex: 1, backgroundColor: "#000" },
+  topBar: {
     position: "absolute",
-    top: 0,
+    top: 12,
+    left: 16,
+    right: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  title: { color: "white", fontSize: 18, fontWeight: "700" },
+  circleButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(0,0,0,0.55)",
+  },
+  guide: {
+    position: "absolute",
+    top: "22%",
+    left: "8%",
+    right: "8%",
+    bottom: "22%",
+  },
+  cornerTL: { position: "absolute", top: 0, left: 0, width: 34, height: 34, borderTopWidth: 4, borderLeftWidth: 4, borderColor: "white" },
+  cornerTR: { position: "absolute", top: 0, right: 0, width: 34, height: 34, borderTopWidth: 4, borderRightWidth: 4, borderColor: "white" },
+  cornerBL: { position: "absolute", bottom: 0, left: 0, width: 34, height: 34, borderBottomWidth: 4, borderLeftWidth: 4, borderColor: "white" },
+  cornerBR: { position: "absolute", bottom: 0, right: 0, width: 34, height: 34, borderBottomWidth: 4, borderRightWidth: 4, borderColor: "white" },
+  bottomBar: {
+    position: "absolute",
     left: 0,
     right: 0,
-    bottom: 0,
-    justifyContent: "space-between",
-  },
-  topControls: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    paddingTop: 48,
-    paddingHorizontal: 20,
-  },
-  iconButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  controlLabel: {
-    color: "white",
-    fontSize: 10,
-    marginTop: 2,
-    textAlign: "center",
-  },
-  captureCount: {
-    position: "absolute",
-    top: 100,
-    right: 20,
+    bottom: 24,
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-  },
-  captureCountText: {
-    color: "white",
-    fontSize: 14,
-    fontWeight: "600",
-    marginLeft: 4,
-  },
-  bottomControls: {
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    paddingBottom: 40,
-    paddingHorizontal: 20,
-  },
-  captureButton: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    borderWidth: 4,
-    justifyContent: "center",
-    alignItems: "center",
-    marginHorizontal: 24,
-  },
-  captureButtonInner: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: "white",
-  },
-  doneButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 20,
-    marginLeft: 16,
-  },
-  doneButtonText: {
-    color: "white",
-    fontWeight: "600",
-    marginLeft: 4,
-  },
-  permissionText: {
-    fontSize: 16,
-    marginTop: 12,
-  },
-  permissionButton: {
+    justifyContent: "space-around",
     paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 8,
-    marginTop: 16,
   },
-  permissionButtonText: {
-    color: "white",
-    fontWeight: "600",
+  sideButton: { width: 72, alignItems: "center" },
+  sideButtonText: { color: "white", fontSize: 11, marginTop: 4 },
+  shutterOuter: {
+    width: 82,
+    height: 82,
+    borderRadius: 41,
+    borderWidth: 5,
+    borderColor: "white",
+    alignItems: "center",
+    justifyContent: "center",
   },
+  shutterInner: { width: 64, height: 64, borderRadius: 32, backgroundColor: "white" },
+  pagesPanel: { minHeight: 150, paddingTop: 10, paddingBottom: 8 },
+  panelHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+  },
+  panelTitle: { fontSize: 16, fontWeight: "700" },
+  createButton: {
+    minHeight: 40,
+    paddingHorizontal: 14,
+    borderRadius: 20,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  createButtonText: { color: "white", fontWeight: "700" },
+  thumbnailList: { paddingHorizontal: 16, paddingTop: 10, gap: 10 },
+  thumbnailWrapper: { width: 82, height: 108, borderRadius: 8, overflow: "hidden" },
+  thumbnail: { width: "100%", height: "100%", backgroundColor: "#222" },
+  thumbnailNumber: {
+    position: "absolute",
+    left: 5,
+    bottom: 5,
+    minWidth: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: "rgba(0,0,0,0.7)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  thumbnailNumberText: { color: "white", fontSize: 11, fontWeight: "700" },
+  removeButton: {
+    position: "absolute",
+    right: 4,
+    top: 4,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: "rgba(0,0,0,0.7)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  center: { flex: 1, alignItems: "center", justifyContent: "center", padding: 24 },
+  permissionTitle: { fontSize: 20, fontWeight: "700", marginTop: 16 },
+  permissionText: { fontSize: 14, textAlign: "center", marginTop: 8, marginBottom: 20 },
+  primaryButton: { paddingHorizontal: 20, paddingVertical: 13, borderRadius: 10 },
+  primaryButtonText: { color: "white", fontWeight: "700" },
 });

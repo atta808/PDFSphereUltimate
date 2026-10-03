@@ -1,56 +1,45 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
   ActivityIndicator,
   Alert,
+  Modal,
   SafeAreaView,
   StatusBar,
-  Platform,
+  StyleSheet,
+  Text,
   TextInput,
-  Modal,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { useTheme } from "../../theme/ThemeContext";
-import { RouteProp, useNavigation } from "@react-navigation/native";
-import {
-  PDFViewerScreenRouteProp,
-  PDFViewerNavigationProp,
-} from "../../navigation/types";
+import { useNavigation } from "@react-navigation/native";
+import { PDFViewerNavigationProp, PDFViewerScreenRouteProp } from "../../navigation/types";
 import { Ionicons } from "@expo/vector-icons";
 import * as DocumentPicker from "expo-document-picker";
-import * as FileSystem from "expo-file-system";
-import { PdfView as Pdf } from "@kishannareshpal/expo-pdf";
+import { File } from "expo-file-system";
+import WebView from "react-native-webview";
 import { fileRepository } from "../../repository/FileRepository";
 import { logger } from "../../utils/logger";
+import { PDF_JS_VIEWER_HTML } from "../../services/pdf/pdfJsViewerHtml";
 
-// Dummy file data – in a real app, this would come from the repository
-const DUMMY_FILES: Record<string, { name: string; uri: string }> = {};
-
-export const PDFViewerScreen: React.FC<{ route: PDFViewerScreenRouteProp }> = ({
-  route,
-}) => {
+export const PDFViewerScreen: React.FC<{ route: PDFViewerScreenRouteProp }> = ({ route }) => {
   const { theme } = useTheme();
   const navigation = useNavigation<PDFViewerNavigationProp>();
+  const webViewRef = useRef<WebView>(null);
   const { fileId, filePath } = route.params || {};
 
   const [pdfUri, setPdfUri] = useState<string | null>(filePath || null);
-  const [pdfName, setPdfName] = useState<string>("Unknown PDF");
-  const [currentPage, setCurrentPage] = useState<number>(1);
-  const [totalPages, setTotalPages] = useState<number>(1);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [isError, setIsError] = useState<boolean>(false);
-  const [scale, setScale] = useState<number>(1.0);
-  const [isPasswordModalVisible, setIsPasswordModalVisible] =
-    useState<boolean>(false);
-  const [password, setPassword] = useState<string>("");
-  const [isPasswordProtected, setIsPasswordProtected] =
-    useState<boolean>(false);
+  const [pdfName, setPdfName] = useState("Unknown PDF");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [scale, setScale] = useState(1);
+  const [isWebViewReady, setIsWebViewReady] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isError, setIsError] = useState(false);
+  const [isPasswordModalVisible, setIsPasswordModalVisible] = useState(false);
+  const [password, setPassword] = useState("");
+  const [pendingBase64, setPendingBase64] = useState<string | null>(null);
 
-  const pdfRef = useRef<any>(null);
-
-  // Load file info (simulate repository fetch)
   useEffect(() => {
     const loadFile = async () => {
       if (fileId) {
@@ -58,22 +47,10 @@ export const PDFViewerScreen: React.FC<{ route: PDFViewerScreenRouteProp }> = ({
           const file = await fileRepository.getFileById(fileId);
           if (file) {
             setPdfName(file.name);
-            if (file.uri) {
-              setPdfUri(file.uri);
-            } else {
-              // If no URI, we might need to fetch it from storage – for now, fallback to picker
-              setPdfUri(null);
-            }
+            setPdfUri(file.uri || null);
           } else {
-            // Try dummy files
-            if (DUMMY_FILES[fileId]) {
-              const dummy = DUMMY_FILES[fileId];
-              setPdfName(dummy.name);
-              setPdfUri(dummy.uri);
-            } else {
-              setPdfUri(null);
-              setIsLoading(false);
-            }
+            setPdfUri(null);
+            setIsLoading(false);
           }
         } catch (error) {
           logger.error("Failed to load file info", error);
@@ -81,12 +58,9 @@ export const PDFViewerScreen: React.FC<{ route: PDFViewerScreenRouteProp }> = ({
           setIsLoading(false);
         }
       } else if (filePath) {
-        // Direct path provided
-        const name = filePath.split("/").pop() || "PDF Document";
-        setPdfName(name);
+        setPdfName(filePath.split("/").pop() || "PDF Document");
         setPdfUri(filePath);
       } else {
-        // No file – show picker
         setPdfUri(null);
         setIsLoading(false);
       }
@@ -94,435 +68,244 @@ export const PDFViewerScreen: React.FC<{ route: PDFViewerScreenRouteProp }> = ({
     loadFile();
   }, [fileId, filePath]);
 
-  // Handle PDF load completion
-  const onLoadComplete = (params: any) => { const numberOfPages = typeof params === 'object' && params.pageCount !== undefined ? params.pageCount : (typeof params === 'number' ? params : 0);
-    setTotalPages(numberOfPages);
-    setIsLoading(false);
-    setIsError(false);
-    setCurrentPage(1);
-    // Update repository with page count if available
-    if (fileId) {
-      fileRepository
-        .getFileById(fileId)
-        .then((file) => {
-          if (file) {
-            file.pages = numberOfPages;
-            fileRepository
-              .saveFile(file)
-              .catch((err) => logger.error("Failed to update page count", err));
-          }
-        })
-        .catch((err) => logger.error("Failed to update file", err));
+  const sendToViewer = useCallback(
+    (type: string, payload?: unknown) => {
+      if (!webViewRef.current || !isWebViewReady) return false;
+      webViewRef.current.postMessage(JSON.stringify({ type, payload }));
+      return true;
+    },
+    [isWebViewReady],
+  );
+
+  const loadPdf = useCallback(
+    async (uri: string, suppliedPassword: string = "") => {
+      try {
+        setIsLoading(true);
+        setIsError(false);
+        const file = new File(uri);
+        if (!file.exists) {
+          throw new Error("PDF file not found.");
+        }
+        const base64 = await file.base64();
+        setPendingBase64(base64);
+        if (isWebViewReady) {
+          webViewRef.current?.postMessage(
+            JSON.stringify({
+              type: "loadPdf",
+              payload: base64,
+              password: suppliedPassword || undefined,
+            }),
+          );
+        }
+      } catch (error) {
+        logger.error("Failed to read PDF", error);
+        setIsLoading(false);
+        setIsError(true);
+        Alert.alert("PDF Error", error instanceof Error ? error.message : "Could not read PDF.");
+      }
+    },
+    [isWebViewReady],
+  );
+
+  useEffect(() => {
+    if (pdfUri && isWebViewReady) {
+      void loadPdf(pdfUri, password);
     }
-  };
+  }, [pdfUri, isWebViewReady, loadPdf]);
 
-  // Handle PDF page change
-  const onPageChanged = (params: any) => { const page = typeof params === 'object' && params.pageIndex !== undefined ? params.pageIndex : (typeof params === 'number' ? params : 1);
-    setCurrentPage(page);
-  };
+  const handleWebViewMessage = useCallback(
+    (event: any) => {
+      try {
+        const data = JSON.parse(event.nativeEvent.data);
+        if (data.type === "ready") {
+          setIsWebViewReady(true);
+          return;
+        }
+        if (data.type === "loaded") {
+          setTotalPages(data.pageCount || 1);
+          setCurrentPage(1);
+          setIsLoading(false);
+          setIsError(false);
+          return;
+        }
+        if (data.type === "pageChanged") {
+          setCurrentPage(data.page || 1);
+          return;
+        }
+        if (data.type === "passwordRequired") {
+          setIsLoading(false);
+          setIsPasswordModalVisible(true);
+          return;
+        }
+        if (data.type === "error") {
+          logger.error("PDF viewer error:", data.payload);
+          setIsLoading(false);
+          setIsError(true);
+          Alert.alert("PDF Error", data.payload || "Failed to load PDF.");
+        }
+      } catch (error) {
+        logger.error("Invalid PDF viewer message", error);
+      }
+    },
+    [],
+  );
 
-  // Handle error
-  const onError = (error: any) => {
-    logger.error("PDF Error:", error);
-    setIsLoading(false);
-    setIsError(true);
-    // Check if password required
-    if (error?.message?.toLowerCase().includes("password")) {
-      setIsPasswordProtected(true);
-      setIsPasswordModalVisible(true);
-    } else {
-      Alert.alert("Error", "Failed to load PDF. Please try again.");
-    }
-  };
-
-  // Pick a PDF file from device (for testing / fallback)
   const pickPDF = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
         type: "application/pdf",
         copyToCacheDirectory: true,
       });
-
-      if (result.assets && result.assets.length > 0) {
+      if (!result.canceled && result.assets?.[0]) {
         const asset = result.assets[0];
-        const uri = asset.uri;
-        const name = asset.name || "Selected PDF";
-        setPdfUri(uri);
-        setPdfName(name);
-        setIsLoading(true);
-        setIsError(false);
-        setPassword("");
-        setIsPasswordProtected(false);
-      } else {
-        // User cancelled
-        logger.debug("Document pick cancelled");
+        setPdfName(asset.name || "Selected PDF");
+        setPdfUri(asset.uri);
+        setCurrentPage(1);
+        setTotalPages(1);
       }
-    } catch (err) {
-      logger.error("Error picking PDF:", err);
+    } catch (error) {
+      logger.error("Error picking PDF", error);
       Alert.alert("Error", "Could not select PDF file.");
     }
   };
 
-  // Zoom controls
-  const zoomIn = () => {
-    setScale((prev) => Math.min(prev + 0.2, 3.0));
+  const updatePage = (page: number) => {
+    const next = Math.max(1, Math.min(page, totalPages));
+    if (sendToViewer("setPage", next)) setCurrentPage(next);
   };
 
-  const zoomOut = () => {
-    setScale((prev) => Math.max(prev - 0.2, 0.5));
+  const updateScale = (next: number) => {
+    const value = Math.max(0.5, Math.min(next, 3));
+    setScale(value);
+    sendToViewer("setScale", value);
   };
 
-  const resetZoom = () => {
-    setScale(1.0);
-  };
-
-  // Handle password submit
-  const handlePasswordSubmit = () => {
-    if (password.trim()) {
-      setIsPasswordModalVisible(false);
-      // The PDF library will handle the password – we need to reload with password.
-      // For @kishannareshpal/expo-pdf, we can pass password in source.
-      // We'll reset and reload.
-      // Since we can't easily re-trigger with password without re-creating the component,
-      // we'll set a state to reload with password.
-      // For simplicity, we'll just try to reload with the password.
-      // The library supports a 'password' prop.
-      // We'll set a state to include password.
-      // We need to re-render with the password.
-      // We'll set a flag and re-run effect.
-      // For now, we'll just log and reload.
-      Alert.alert(
-        "Info",
-        "Password support is implemented but requires re-rendering. We will handle this in production.",
-      );
-      // In a real implementation, you would pass password prop to Pdf component.
-      // We'll just set state and reload.
-      setIsPasswordProtected(false);
-      setIsLoading(true);
-      // Reload by resetting URI
-      const currentUri = pdfUri;
-      setPdfUri(null);
-      setTimeout(() => {
-        setPdfUri(currentUri);
-      }, 100);
-    } else {
-      Alert.alert("Error", "Please enter a password.");
+  const submitPassword = () => {
+    if (!password.trim() || !pendingBase64) {
+      Alert.alert("Password required", "Enter the PDF password.");
+      return;
     }
+    setIsPasswordModalVisible(false);
+    setIsLoading(true);
+    webViewRef.current?.postMessage(
+      JSON.stringify({
+        type: "loadPdf",
+        payload: pendingBase64,
+        password,
+      }),
+    );
   };
 
-  // Render loading state
-  if (isLoading && pdfUri) {
-    return (
-      <SafeAreaView
-        style={[styles.safeArea, { backgroundColor: theme.colors.background }]}
-      >
-        <View
-          style={[
-            styles.loadingContainer,
-            { backgroundColor: theme.colors.background },
-          ]}
-        >
-          <ActivityIndicator size="large" color={theme.colors.primary} />
-          <Text
-            style={[styles.loadingText, { color: theme.colors.textSecondary }]}
-          >
-            Loading PDF...
-          </Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  // Render error state
-  if (isError && !isPasswordProtected) {
-    return (
-      <SafeAreaView
-        style={[styles.safeArea, { backgroundColor: theme.colors.background }]}
-      >
-        <View
-          style={[
-            styles.errorContainer,
-            { backgroundColor: theme.colors.background },
-          ]}
-        >
-          <Ionicons
-            name="alert-circle-outline"
-            size={64}
-            color={theme.colors.error}
-          />
-          <Text style={[styles.errorText, { color: theme.colors.text }]}>
-            Failed to load PDF
-          </Text>
-          <TouchableOpacity
-            style={[
-              styles.retryButton,
-              { backgroundColor: theme.colors.primary },
-            ]}
-            onPress={pickPDF}
-          >
-            <Text style={styles.retryButtonText}>Pick a PDF</Text>
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  // If no PDF URI, show picker prompt
-  if (!pdfUri) {
-    return (
-      <SafeAreaView
-        style={[styles.safeArea, { backgroundColor: theme.colors.background }]}
-      >
-        <View
-          style={[
-            styles.emptyContainer,
-            { backgroundColor: theme.colors.background },
-          ]}
-        >
-          <Ionicons
-            name="document-outline"
-            size={80}
-            color={theme.colors.iconSecondary}
-          />
-          <Text style={[styles.emptyTitle, { color: theme.colors.text }]}>
-            No PDF Selected
-          </Text>
-          <Text
-            style={[
-              styles.emptySubtitle,
-              { color: theme.colors.textSecondary },
-            ]}
-          >
-            Choose a PDF to view
-          </Text>
-          <TouchableOpacity
-            style={[
-              styles.pickButton,
-              { backgroundColor: theme.colors.primary },
-            ]}
-            onPress={pickPDF}
-          >
-            <Text style={styles.pickButtonText}>Select PDF</Text>
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  // Main render: PDF viewer with controls
   return (
-    <SafeAreaView
-      style={[styles.safeArea, { backgroundColor: theme.colors.background }]}
-    >
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.colors.background }]}>
       <StatusBar barStyle={theme.isDark ? "light-content" : "dark-content"} />
-      <View style={styles.container}>
-        {/* Header */}
-        <View
-          style={[
-            styles.header,
-            {
-              backgroundColor: theme.colors.background,
-              borderBottomColor: theme.colors.border,
-            },
-          ]}
-        >
-          <TouchableOpacity
-            onPress={() => navigation.goBack()}
-            style={styles.headerButton}
-          >
-            <Ionicons name="arrow-back" size={24} color={theme.colors.text} />
-          </TouchableOpacity>
-          <Text
-            style={[styles.headerTitle, { color: theme.colors.text }]}
-            numberOfLines={1}
-          >
-            {pdfName}
-          </Text>
-          <TouchableOpacity onPress={pickPDF} style={styles.headerButton}>
-            <Ionicons
-              name="folder-outline"
-              size={24}
-              color={theme.colors.text}
-            />
-          </TouchableOpacity>
-        </View>
 
-        {/* PDF Renderer */}
-        <View style={styles.pdfContainer}>
-          <Pdf
-            uri={pdfUri}
-            password={password || undefined}
-            onLoadComplete={onLoadComplete as any}
-            onPageChanged={onPageChanged as any}
-            onError={onError}
-            style={styles.pdf}
-          />
-        </View>
+      <View style={[styles.header, { borderBottomColor: theme.colors.border }]}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.headerButton}>
+          <Ionicons name="arrow-back" size={24} color={theme.colors.text} />
+        </TouchableOpacity>
+        <Text style={[styles.headerTitle, { color: theme.colors.text }]} numberOfLines={1}>
+          {pdfName}
+        </Text>
+        <TouchableOpacity onPress={pickPDF} style={styles.headerButton}>
+          <Ionicons name="folder-open-outline" size={24} color={theme.colors.text} />
+        </TouchableOpacity>
+      </View>
 
-        {/* Controls Footer */}
-        <View
-          style={[
-            styles.footer,
-            {
-              backgroundColor: theme.colors.background,
-              borderTopColor: theme.colors.border,
-            },
-          ]}
-        >
-          <View style={styles.pageControls}>
-            <TouchableOpacity
-              style={[
-                styles.controlButton,
-                { borderColor: theme.colors.border },
-              ]}
-              onPress={() => {
-                if (currentPage > 1) {
-                  pdfRef.current?.setPage(currentPage - 1);
-                }
-              }}
-              disabled={currentPage <= 1}
-            >
-              <Ionicons
-                name="chevron-back"
-                size={24}
-                color={
-                  currentPage <= 1
-                    ? theme.colors.iconSecondary
-                    : theme.colors.text
-                }
-              />
-            </TouchableOpacity>
-            <Text style={[styles.pageText, { color: theme.colors.text }]}>
-              {currentPage} / {totalPages}
+      <View style={styles.viewerContainer}>
+        <WebView
+          ref={webViewRef}
+          source={{ html: PDF_JS_VIEWER_HTML, baseUrl: "https://cdnjs.cloudflare.com" }}
+          onMessage={handleWebViewMessage}
+          javaScriptEnabled
+          domStorageEnabled
+          originWhitelist={["*"]}
+          allowFileAccess
+          style={styles.webView}
+        />
+        {isLoading && (
+          <View style={[styles.loadingOverlay, { backgroundColor: theme.colors.background }]}>
+            <ActivityIndicator size="large" color={theme.colors.primary} />
+            <Text style={[styles.loadingText, { color: theme.colors.textSecondary }]}>
+              Loading PDF...
             </Text>
-            <TouchableOpacity
-              style={[
-                styles.controlButton,
-                { borderColor: theme.colors.border },
-              ]}
-              onPress={() => {
-                if (currentPage < totalPages) {
-                  pdfRef.current?.setPage(currentPage + 1);
-                }
-              }}
-              disabled={currentPage >= totalPages}
-            >
-              <Ionicons
-                name="chevron-forward"
-                size={24}
-                color={
-                  currentPage >= totalPages
-                    ? theme.colors.iconSecondary
-                    : theme.colors.text
-                }
-              />
+          </View>
+        )}
+        {isError && !isLoading && (
+          <View style={[styles.errorOverlay, { backgroundColor: theme.colors.background }]}>
+            <Ionicons name="alert-circle-outline" size={56} color={theme.colors.error} />
+            <Text style={[styles.errorText, { color: theme.colors.text }]}>Failed to load PDF</Text>
+            <TouchableOpacity style={[styles.retryButton, { backgroundColor: theme.colors.primary }]} onPress={pickPDF}>
+              <Text style={styles.retryButtonText}>Choose another PDF</Text>
             </TouchableOpacity>
           </View>
+        )}
+      </View>
 
-          <View style={styles.zoomControls}>
-            <TouchableOpacity
-              style={[
-                styles.controlButton,
-                { borderColor: theme.colors.border },
-              ]}
-              onPress={zoomOut}
-            >
-              <Ionicons
-                name="remove-outline"
-                size={24}
-                color={theme.colors.text}
-              />
-            </TouchableOpacity>
-            <TouchableOpacity onPress={resetZoom}>
-              <Text
-                style={[styles.zoomText, { color: theme.colors.textSecondary }]}
-              >
-                {Math.round(scale * 100)}%
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[
-                styles.controlButton,
-                { borderColor: theme.colors.border },
-              ]}
-              onPress={zoomIn}
-            >
-              <Ionicons
-                name="add-outline"
-                size={24}
-                color={theme.colors.text}
-              />
-            </TouchableOpacity>
-          </View>
+      <View style={[styles.footer, { backgroundColor: theme.colors.background, borderTopColor: theme.colors.border }]}>
+        <View style={styles.controlGroup}>
+          <TouchableOpacity
+            style={[styles.controlButton, { borderColor: theme.colors.border }]}
+            disabled={currentPage <= 1}
+            onPress={() => updatePage(currentPage - 1)}
+          >
+            <Ionicons name="chevron-back" size={22} color={theme.colors.text} />
+          </TouchableOpacity>
+          <Text style={[styles.pageText, { color: theme.colors.text }]}>
+            {currentPage} / {totalPages}
+          </Text>
+          <TouchableOpacity
+            style={[styles.controlButton, { borderColor: theme.colors.border }]}
+            disabled={currentPage >= totalPages}
+            onPress={() => updatePage(currentPage + 1)}
+          >
+            <Ionicons name="chevron-forward" size={22} color={theme.colors.text} />
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.controlGroup}>
+          <TouchableOpacity style={[styles.controlButton, { borderColor: theme.colors.border }]} onPress={() => updateScale(scale - 0.2)}>
+            <Ionicons name="remove-outline" size={22} color={theme.colors.text} />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => updateScale(1)}>
+            <Text style={[styles.zoomText, { color: theme.colors.textSecondary }]}>
+              {Math.round(scale * 100)}%
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.controlButton, { borderColor: theme.colors.border }]} onPress={() => updateScale(scale + 0.2)}>
+            <Ionicons name="add-outline" size={22} color={theme.colors.text} />
+          </TouchableOpacity>
         </View>
       </View>
 
-      {/* Password Modal */}
       <Modal
         visible={isPasswordModalVisible}
         transparent
         animationType="slide"
         onRequestClose={() => setIsPasswordModalVisible(false)}
       >
-        <View
-          style={[styles.modalOverlay, { backgroundColor: "rgba(0,0,0,0.5)" }]}
-        >
-          <View
-            style={[
-              styles.modalContainer,
-              { backgroundColor: theme.colors.surface },
-            ]}
-          >
-            <Text style={[styles.modalTitle, { color: theme.colors.text }]}>
-              Password Required
-            </Text>
-            <Text
-              style={[
-                styles.modalSubtitle,
-                { color: theme.colors.textSecondary },
-              ]}
-            >
-              This PDF is password-protected. Please enter the password to view
-              it.
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modal, { backgroundColor: theme.colors.surface }]}>
+            <Text style={[styles.modalTitle, { color: theme.colors.text }]}>Password Required</Text>
+            <Text style={[styles.modalSubtitle, { color: theme.colors.textSecondary }]}>
+              Enter the password for this PDF.
             </Text>
             <TextInput
-              style={[
-                styles.modalInput,
-                { borderColor: theme.colors.border, color: theme.colors.text },
-              ]}
-              placeholder="Enter password"
-              placeholderTextColor={theme.colors.textPlaceholder}
-              secureTextEntry
+              style={[styles.input, { borderColor: theme.colors.border, color: theme.colors.text }]}
               value={password}
               onChangeText={setPassword}
+              secureTextEntry
+              placeholder="PDF password"
+              placeholderTextColor={theme.colors.textPlaceholder}
+              onSubmitEditing={submitPassword}
               autoFocus
-              onSubmitEditing={handlePasswordSubmit}
             />
             <View style={styles.modalActions}>
-              <TouchableOpacity
-                style={[
-                  styles.modalButton,
-                  { backgroundColor: theme.colors.surface },
-                ]}
-                onPress={() => {
-                  setIsPasswordModalVisible(false);
-                  setPassword("");
-                }}
-              >
-                <Text
-                  style={[styles.modalButtonText, { color: theme.colors.text }]}
-                >
-                  Cancel
-                </Text>
+              <TouchableOpacity onPress={() => setIsPasswordModalVisible(false)} style={styles.modalAction}>
+                <Text style={{ color: theme.colors.text }}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.modalButton,
-                  { backgroundColor: theme.colors.primary },
-                ]}
-                onPress={handlePasswordSubmit}
-              >
-                <Text style={styles.modalButtonTextPrimary}>Open</Text>
+              <TouchableOpacity onPress={submitPassword} style={[styles.modalAction, { backgroundColor: theme.colors.primary }]}>
+                <Text style={styles.primaryText}>Open</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -533,184 +316,29 @@ export const PDFViewerScreen: React.FC<{ route: PDFViewerScreenRouteProp }> = ({
 };
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-  },
-  container: {
-    flex: 1,
-  },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-  },
-  headerButton: {
-    padding: 8,
-  },
-  headerTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    flex: 1,
-    textAlign: "center",
-    marginHorizontal: 8,
-  },
-  pdfContainer: {
-    flex: 1,
-  },
-  pdf: {
-    flex: 1,
-    backgroundColor: "#f0f0f0",
-  },
-  footer: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderTopWidth: 1,
-  },
-  pageControls: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  controlButton: {
-    borderWidth: 1,
-    borderRadius: 20,
-    padding: 8,
-    width: 40,
-    height: 40,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  pageText: {
-    fontSize: 14,
-    fontWeight: "500",
-    marginHorizontal: 16,
-    minWidth: 60,
-    textAlign: "center",
-  },
-  zoomControls: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  zoomText: {
-    fontSize: 14,
-    fontWeight: "500",
-    marginHorizontal: 12,
-    minWidth: 44,
-    textAlign: "center",
-  },
-  // Loading
-  loadingContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 20,
-  },
-  loadingText: {
-    marginTop: 16,
-    fontSize: 16,
-  },
-  // Error
-  errorContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 20,
-  },
-  errorText: {
-    fontSize: 18,
-    fontWeight: "500",
-    marginTop: 12,
-    marginBottom: 24,
-  },
-  retryButton: {
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 8,
-  },
-  retryButtonText: {
-    color: "white",
-    fontWeight: "600",
-  },
-  // Empty state
-  emptyContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 20,
-  },
-  emptyTitle: {
-    fontSize: 20,
-    fontWeight: "600",
-    marginTop: 16,
-  },
-  emptySubtitle: {
-    fontSize: 16,
-    marginTop: 8,
-    marginBottom: 24,
-  },
-  pickButton: {
-    paddingHorizontal: 32,
-    paddingVertical: 14,
-    borderRadius: 12,
-  },
-  pickButtonText: {
-    color: "white",
-    fontWeight: "600",
-    fontSize: 16,
-  },
-  // Password Modal
-  modalOverlay: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  modalContainer: {
-    width: "85%",
-    padding: 20,
-    borderRadius: 16,
-    elevation: 5,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: "600",
-    marginBottom: 8,
-  },
-  modalSubtitle: {
-    fontSize: 14,
-    marginBottom: 16,
-  },
-  modalInput: {
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 16,
-    marginBottom: 16,
-  },
-  modalActions: {
-    flexDirection: "row",
-    justifyContent: "flex-end",
-  },
-  modalButton: {
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 8,
-    marginLeft: 8,
-  },
-  modalButtonText: {
-    fontWeight: "500",
-  },
-  modalButtonTextPrimary: {
-    color: "white",
-    fontWeight: "500",
-  },
+  safeArea: { flex: 1 },
+  header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: 1 },
+  headerButton: { padding: 8 },
+  headerTitle: { flex: 1, textAlign: "center", fontSize: 16, fontWeight: "600", marginHorizontal: 8 },
+  viewerContainer: { flex: 1 },
+  webView: { flex: 1, backgroundColor: "#f0f0f0" },
+  loadingOverlay: { ...StyleSheet.absoluteFillObject, alignItems: "center", justifyContent: "center" },
+  loadingText: { marginTop: 12, fontSize: 14 },
+  errorOverlay: { ...StyleSheet.absoluteFillObject, alignItems: "center", justifyContent: "center", padding: 24 },
+  errorText: { marginTop: 12, fontSize: 18, fontWeight: "600" },
+  retryButton: { marginTop: 16, paddingHorizontal: 18, paddingVertical: 12, borderRadius: 10 },
+  retryButtonText: { color: "white", fontWeight: "700" },
+  footer: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 16, paddingVertical: 10, borderTopWidth: 1 },
+  controlGroup: { flexDirection: "row", alignItems: "center" },
+  controlButton: { width: 40, height: 40, borderWidth: 1, borderRadius: 20, alignItems: "center", justifyContent: "center" },
+  pageText: { minWidth: 62, textAlign: "center", marginHorizontal: 10, fontWeight: "600" },
+  zoomText: { minWidth: 52, textAlign: "center", marginHorizontal: 8 },
+  modalOverlay: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.5)" },
+  modal: { padding: 20, borderTopLeftRadius: 18, borderTopRightRadius: 18 },
+  modalTitle: { fontSize: 20, fontWeight: "700" },
+  modalSubtitle: { marginTop: 6, marginBottom: 16 },
+  input: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 12, fontSize: 16 },
+  modalActions: { flexDirection: "row", justifyContent: "flex-end", gap: 10, marginTop: 16 },
+  modalAction: { paddingHorizontal: 16, paddingVertical: 11, borderRadius: 10 },
+  primaryText: { color: "white", fontWeight: "700" },
 });

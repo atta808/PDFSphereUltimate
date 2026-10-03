@@ -60,11 +60,11 @@ export class ChunkingService {
    */
   async chunkDocument(fileId: string, text: string, extractionVersion: string = 'v1'): Promise<void> {
     // Remove existing chunks
-    await db.getAllAsync('DELETE FROM chunks WHERE file_id = ?', fileId);
+    await db.runAsync('DELETE FROM chunks WHERE file_id = ?', fileId);
 
     const chunkTexts = this.splitText(text);
     for (let i = 0; i < chunkTexts.length; i++) {
-      await db.getAllAsync(
+      await db.runAsync(
         `INSERT INTO chunks (file_id, chunk_index, content, extraction_version)
          VALUES (?, ?, ?, ?)`,
         [fileId, i, chunkTexts[i], extractionVersion]
