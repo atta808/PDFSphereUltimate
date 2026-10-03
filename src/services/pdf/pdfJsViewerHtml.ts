@@ -50,20 +50,20 @@ export const PDF_JS_VIEWER_HTML = `
       post({ type: "pageChanged", page: currentPage });
     };
 
-    const loadPdf = async (base64) => {
+    const loadPdf = async (base64, password) => {
       try {
-        pdf = await pdfjsLib.getDocument({ data: base64ToBytes(base64), disableWorker: true }).promise;
+        pdf = await pdfjsLib.getDocument({ data: base64ToBytes(base64), disableWorker: true, password }).promise;
         post({ type: "loaded", pageCount: pdf.numPages });
         await renderPage(1);
       } catch (error) {
-        post({ type: "error", payload: error && error.message ? error.message : String(error) });
+        if (error && error.name === "PasswordException") {\n          post({ type: "passwordRequired" });\n          return;\n        }\n        post({ type: "error", payload: error && error.message ? error.message : String(error) });
       }
     };
 
     window.addEventListener("message", async (event) => {
       try {
         const message = JSON.parse(event.data);
-        if (message.type === "loadPdf") await loadPdf(message.payload);
+        if (message.type === "loadPdf") await loadPdf(message.payload, message.password);
         else if (message.type === "setPage") await renderPage(Number(message.page) || 1);
         else if (message.type === "setScale") {
           scale = Math.max(0.5, Math.min(Number(message.scale) || 1, 3));
