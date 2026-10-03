@@ -23,7 +23,7 @@ export class SearchService {
       );
       if (result.length === 0) {
         // Create the FTS5 virtual table
-        await db.getAllAsync(`
+        await db.execAsync(`
           CREATE VIRTUAL TABLE IF NOT EXISTS files_fts USING fts5(
             file_id UNINDEXED,
             name,
@@ -50,9 +50,9 @@ export class SearchService {
   async indexFile(fileId: string, name: string, content: string = ''): Promise<void> {
     try {
       // Remove existing entry
-      await db.getAllAsync('DELETE FROM files_fts WHERE file_id = ?', fileId);
+      await db.runAsync('DELETE FROM files_fts WHERE file_id = ?', fileId);
       // Insert new entry
-      await db.getAllAsync(
+      await db.runAsync(
         'INSERT INTO files_fts(file_id, name, content) VALUES (?, ?, ?)',
         [fileId, name, content]
       );
@@ -147,7 +147,7 @@ export class SearchService {
   async rebuildIndex(): Promise<void> {
     try {
       // Clear existing index
-      await db.getAllAsync('DELETE FROM files_fts');
+      await db.runAsync('DELETE FROM files_fts');
       // Get all files and index them
       const files = await fileRepository.getAllFiles();
       for (const file of files) {
