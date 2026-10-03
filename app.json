@@ -28,7 +28,13 @@
     "plugins": [
       "expo-secure-store",
       "expo-sqlite",
-      "expo-font"
+      "expo-font",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow PDFSphere to access the camera to scan documents."
+        }
+      ]
     ]
   }
 }
