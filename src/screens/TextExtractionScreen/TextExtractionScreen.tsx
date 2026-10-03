@@ -14,7 +14,7 @@ import { useNavigation } from "@react-navigation/native";
 import { MainTabNavigationProp } from "../../navigation/types";
 import { Ionicons } from "@expo/vector-icons";
 import * as DocumentPicker from "expo-document-picker";
-import * as FileSystem from "expo-file-system";
+import { File } from "expo-file-system";
 import WebView from "react-native-webview";
 import { logger } from "../../utils/logger";
 import { fileRepository } from "../../repository/FileRepository";
@@ -75,9 +75,7 @@ export const TextExtractionScreen: React.FC = () => {
         setExtractedText("");
         setFileUri(uri);
         // Read file as base64
-        const base64 = await FileSystem.readAsStringAsync(uri, {
-          encoding: "base64",
-        });
+        const base64 = await new File(uri).base64();
         // Send to WebView for extraction
         if (webViewRef.current && isWebViewReady) {
           setIsLoading(true);
