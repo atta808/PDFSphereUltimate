@@ -111,7 +111,7 @@ export const PDFViewerScreen: React.FC<{ route: PDFViewerScreenRouteProp }> = ({
     if (pdfUri && isWebViewReady) {
       void loadPdf(pdfUri, password);
     }
-  }, [pdfUri, isWebViewReady, loadPdf, password]);
+  }, [pdfUri, isWebViewReady, loadPdf]);
 
   const handleWebViewMessage = useCallback(
     (event: any) => {
