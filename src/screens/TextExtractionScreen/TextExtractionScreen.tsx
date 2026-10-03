@@ -19,6 +19,7 @@ import WebView from "react-native-webview";
 import { logger } from "../../utils/logger";
 import { fileRepository } from "../../repository/FileRepository";
 import { generateUUID } from "../../utils/uuid";
+import { PDF_JS_EXTRACTOR_HTML } from "../../services/text-extraction/pdfJsHtml";
 
 export const TextExtractionScreen: React.FC = () => {
   const { theme } = useTheme();
@@ -183,7 +184,7 @@ export const TextExtractionScreen: React.FC = () => {
       <View style={{ height: 0, width: 0, opacity: 0 }}>
         <WebView
           ref={webViewRef}
-          source={require("../../../assets/pdfjs-extractor.html")}
+          source={{ html: PDF_JS_EXTRACTOR_HTML, baseUrl: "https://cdnjs.cloudflare.com" }}
           onMessage={handleMessage}
           javaScriptEnabled={true}
           domStorageEnabled={true}
