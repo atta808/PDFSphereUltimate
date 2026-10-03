@@ -39,10 +39,11 @@ export class ChatService {
    * Create a new conversation.
    */
   async createConversation(fileId: string, title: string = 'New Chat'): Promise<number> {
-    const result = await db.getAllAsync(`INSERT INTO conversations (file_id, title) VALUES (?, ?) RETURNING id`, fileId, title);
-    if (result && result.length > 0) {
-      return (result[0] as any).id;
-    }
+    const result = await db.runAsync(
+      `INSERT INTO conversations (file_id, title) VALUES (?, ?)`,
+      [fileId, title],
+    );
+    return result.lastInsertRowId;
     throw new Error('Failed to create conversation');
   }
 
@@ -119,14 +120,23 @@ export class ChatService {
     const response = await this.aiProvider.summarize(prompt, { temperature: options?.temperature || 0.3 });
 
     // 6. Save user message and assistant response
-    await db.runAsync(`INSERT INTO messages (conversation_id, role, content) VALUES (?, ?, ?)`, conversationId, 'user', userMessage);
+    await db.runAsync(
+      `INSERT INTO messages (conversation_id, role, content) VALUES (?, ?, ?)`,
+      [conversationId, 'user', userMessage],
+    );
     const chunkIds = retrievedChunks.map(c => c.id);
     const citationsJson = JSON.stringify(citations);
-    await db.runAsync(`INSERT INTO messages (conversation_id, role, content, citations, chunk_ids)
-       VALUES (?, ?, ?, ?, ?)`, conversationId, 'assistant', response, citationsJson, JSON.stringify(chunkIds));
+    await db.runAsync(
+      `INSERT INTO messages (conversation_id, role, content, citations, chunk_ids)
+       VALUES (?, ?, ?, ?, ?)`,
+      [conversationId, 'assistant', response, citationsJson, JSON.stringify(chunkIds)],
+    );
 
     // 7. Update conversation message count and timestamp
-    await db.runAsync(`UPDATE conversations SET message_count = message_count + 2, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, conversationId);
+    await db.runAsync(
+      `UPDATE conversations SET message_count = message_count + 2, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+      [conversationId],
+    );
 
     return { response, citations };
   }
