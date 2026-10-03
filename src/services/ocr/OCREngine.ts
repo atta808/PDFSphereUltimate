@@ -1,5 +1,5 @@
 import { extractTextFromImage } from 'expo-text-extractor';
-import * as FileSystem from 'expo-file-system';
+import { File } from 'expo-file-system';
 
 export type OCRResult = {
   text: string;
@@ -17,8 +17,8 @@ export class OCREngine {
   async extractText(imageUri: string, languageHint?: string): Promise<OCRResult> {
     try {
       // Ensure the file exists
-      const fileInfo = await FileSystem.getInfoAsync(imageUri);
-      if (!fileInfo.exists) {
+      const file = new File(imageUri);
+      if (!file.exists) {
         throw new Error(`Image file not found: ${imageUri}`);
       }
 
