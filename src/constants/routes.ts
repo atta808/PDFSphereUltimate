@@ -12,6 +12,7 @@ export const Routes = {
   HOME: "Home",
   FILES: "Files",
   SCANNER: "Scanner",
+  SCANNER_CAMERA: "ScannerCamera",
   AI: "AI",
   SETTINGS: "Settings",
 
