@@ -1,5 +1,6 @@
 import * as SQLite from "expo-sqlite";
 import { FileModel } from "../models/FileModel";
+import { FolderModel } from "../models/FolderModel";
 import { logger } from "../utils/logger";
 
 // Open database connection
@@ -27,6 +28,14 @@ export class FileRepository {
         tags TEXT,
         metadata_json TEXT
       );
+      CREATE TABLE IF NOT EXISTS folders (
+        id TEXT PRIMARY KEY NOT NULL,
+        name TEXT NOT NULL,
+        parentId TEXT,
+        createdAt TEXT NOT NULL,
+        updatedAt TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_folders_parent ON folders(parentId);
       CREATE TABLE IF NOT EXISTS extracted_text (
         file_id TEXT NOT NULL,
         content TEXT NOT NULL,
@@ -240,6 +249,124 @@ export class FileRepository {
       return result.map((row) => this.mapRowToFileModel(row));
     } catch (error) {
       logger.error("Failed to get recent files", error);
+      throw error;
+    }
+  }
+
+  // ==================== V2 Document Workspace ====================
+
+  /**
+   * Get documents marked as favorites.
+   */
+  async getFavoriteFiles(): Promise<FileModel[]> {
+    await this.ready;
+    try {
+      const result = await db.getAllAsync(
+        `SELECT id, name, uri, size, pages, lastModified, isFavorite, folderId, tags, metadata_json
+         FROM files
+         WHERE isFavorite = 1
+         ORDER BY lastModified DESC`,
+      );
+      return result.map((row) => this.mapRowToFileModel(row));
+    } catch (error) {
+      logger.error("Failed to get favorite files", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Rename a document without replacing any other document fields.
+   */
+  async renameFile(id: string, name: string): Promise<void> {
+    await this.ready;
+    try {
+      await db.runAsync("UPDATE files SET name = ? WHERE id = ?", [name, id]);
+    } catch (error) {
+      logger.error(`Failed to rename file ${id}`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Move a document to a folder. null means the workspace root.
+   */
+  async moveFileToFolder(id: string, folderId: string | null): Promise<void> {
+    await this.ready;
+    try {
+      await db.runAsync("UPDATE files SET folderId = ? WHERE id = ?", [folderId, id]);
+    } catch (error) {
+      logger.error(`Failed to move file ${id}`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * List folders at a given level.
+   */
+  async getFolders(parentId: string | null = null): Promise<FolderModel[]> {
+    await this.ready;
+    try {
+      const result = await db.getAllAsync(
+        `SELECT id, name, parentId, createdAt, updatedAt
+         FROM folders
+         WHERE parentId IS ?
+         ORDER BY name COLLATE NOCASE ASC`,
+        [parentId],
+      );
+      return result.map((row) => this.mapRowToFolderModel(row));
+    } catch (error) {
+      logger.error("Failed to get folders", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Create a persistent folder.
+   */
+  async createFolder(name: string, parentId: string | null = null): Promise<FolderModel> {
+    await this.ready;
+    const now = new Date().toISOString();
+    const id = `folder-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    try {
+      await db.runAsync(
+        `INSERT INTO folders (id, name, parentId, createdAt, updatedAt)
+         VALUES (?, ?, ?, ?, ?)`,
+        [id, name, parentId, now, now],
+      );
+      return { id, name, parentId, createdAt: new Date(now), updatedAt: new Date(now) };
+    } catch (error) {
+      logger.error("Failed to create folder", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Rename a folder.
+   */
+  async renameFolder(id: string, name: string): Promise<void> {
+    await this.ready;
+    try {
+      await db.runAsync(
+        "UPDATE folders SET name = ?, updatedAt = ? WHERE id = ?",
+        [name, new Date().toISOString(), id],
+      );
+    } catch (error) {
+      logger.error(`Failed to rename folder ${id}`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Delete a folder without deleting documents. Child folders are promoted to the root.
+   */
+  async deleteFolder(id: string): Promise<void> {
+    await this.ready;
+    try {
+      await db.runAsync("UPDATE files SET folderId = NULL WHERE folderId = ?", [id]);
+      await db.runAsync("UPDATE folders SET parentId = NULL, updatedAt = ? WHERE parentId = ?", [new Date().toISOString(), id]);
+      await db.runAsync("DELETE FROM folders WHERE id = ?", [id]);
+    } catch (error) {
+      logger.error(`Failed to delete folder ${id}`, error);
       throw error;
     }
   }
@@ -459,6 +586,16 @@ export class FileRepository {
   /**
    * Map a database row to a FileModel object.
    */
+  private mapRowToFolderModel(row: any): FolderModel {
+    return {
+      id: row.id,
+      name: row.name,
+      parentId: row.parentId || null,
+      createdAt: new Date(row.createdAt),
+      updatedAt: new Date(row.updatedAt),
+    };
+  }
+
   private mapRowToFileModel(row: any): FileModel {
     return {
       id: row.id,
