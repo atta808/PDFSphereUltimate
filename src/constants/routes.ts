@@ -16,6 +16,7 @@ export const Routes = {
   SETTINGS: "Settings",
 
   // PDF Viewer Stack
+  PDF_VIEWER_STACK: "PDFViewerStack",
   PDF_VIEWER: "PDFViewer",
   EDITOR: "Editor",
   OCR: "OCR",
