@@ -16,7 +16,7 @@ export type PDFViewerStackParamList = {
 // ==================== Scanner Stack ====================
 
 export type ScannerStackParamList = {
-  [Routes.SCANNER]: undefined;
+  [Routes.SCANNER_CAMERA]: undefined;
 };
 
 // ==================== Editor Stack ====================
@@ -64,7 +64,7 @@ export type RootStackParamList = {
   [Routes.ROOT]: undefined;
   [Routes.AUTH]: undefined;
   [Routes.MAIN]: NavigatorScreenParams<MainTabParamList>;
-  [Routes.PDF_VIEWER]: NavigatorScreenParams<PDFViewerStackParamList>;
+  [Routes.PDF_VIEWER_STACK]: NavigatorScreenParams<PDFViewerStackParamList>;
 };
 
 // ==================== Combined Navigation Prop Types ====================

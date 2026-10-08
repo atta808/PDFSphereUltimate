@@ -17,5 +17,6 @@ export interface FileModel {
     subject?: string;
     keywords?: string;
     createdAt?: Date;
+    source?: string;
   };
 }

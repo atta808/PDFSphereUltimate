@@ -52,7 +52,7 @@ export const PDF_JS_VIEWER_HTML = `
 
     const loadPdf = async (base64, password) => {
       try {
-        pdf = await pdfjsLib.getDocument({ data: base64ToBytes(base64), disableWorker: true, password }).promise;
+        pdf = await pdfjsLib.getDocument({ data: base64ToBytes(base64), disableWorker: false, password }).promise;
         post({ type: "loaded", pageCount: pdf.numPages });
         await renderPage(1);
       } catch (error) {

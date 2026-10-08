@@ -37,6 +37,8 @@ export const ScannerScreen: React.FC = () => {
   const [images, setImages] = useState<ScanImage[]>([]);
   const [isCameraReady, setIsCameraReady] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [processingStage, setProcessingStage] = useState("");
+  const [processingPage, setProcessingPage] = useState(0);
   const [flash, setFlash] = useState(false);
 
   const addImages = useCallback((newImages: ScanImage[]) => {
@@ -101,11 +103,16 @@ export const ScannerScreen: React.FC = () => {
     }
 
     setIsProcessing(true);
+    setProcessingStage("Preparing PDF...");
+    setProcessingPage(0);
 
     try {
       const pdf = await PDFDocument.create();
 
-      for (const image of images) {
+      for (let index = 0; index < images.length; index += 1) {
+        const image = images[index];
+        setProcessingPage(index + 1);
+        setProcessingStage(`Processing page ${index + 1} of ${images.length}...`);
         const source = new File(image.uri);
         const bytes = await source.bytes();
         const isPng = /\.png$/i.test(image.uri);
@@ -122,7 +129,9 @@ export const ScannerScreen: React.FC = () => {
         });
       }
 
+      setProcessingStage("Generating PDF...");
       const pdfBytes = await pdf.save();
+      setProcessingStage("Saving document...");
       const fileId = generateUUID();
       const fileName = `Scan_${new Date().toISOString().replace(/[:.]/g, "-")}.pdf`;
       const output = new File(Paths.document, fileName);
@@ -148,12 +157,13 @@ export const ScannerScreen: React.FC = () => {
         },
       });
 
+      setProcessingStage("PDF ready");
       setImages([]);
       Alert.alert("PDF created", `${fileName} was saved to PDFSphere.`, [
         {
           text: "Open PDF",
           onPress: () =>
-            navigation.navigate(Routes.PDF_VIEWER, {
+            navigation.navigate(Routes.PDF_VIEWER_STACK, {
               screen: Routes.PDF_VIEWER,
               params: { fileId, filePath: output.uri },
             }),
@@ -168,6 +178,8 @@ export const ScannerScreen: React.FC = () => {
       );
     } finally {
       setIsProcessing(false);
+      setProcessingStage("");
+      setProcessingPage(0);
     }
   }, [images, navigation]);
 
@@ -263,7 +275,12 @@ export const ScannerScreen: React.FC = () => {
               disabled={isProcessing}
             >
               {isProcessing ? (
-                <ActivityIndicator color="white" size="small" />
+                <View style={styles.processingButtonContent}>
+                  <ActivityIndicator color="white" size="small" />
+                  <Text style={styles.createButtonText}>
+                    {processingPage > 0 ? `${processingPage}/${images.length}` : "..."}
+                  </Text>
+                </View>
               ) : (
                 <>
                   <Ionicons name="document-text-outline" size={18} color="white" />
@@ -272,6 +289,15 @@ export const ScannerScreen: React.FC = () => {
               )}
             </TouchableOpacity>
           </View>
+
+          {isProcessing && (
+            <View style={styles.processingStatus}>
+              <ActivityIndicator size="small" color={theme.colors.primary} />
+              <Text style={[styles.processingStatusText, { color: theme.colors.textSecondary }]}>
+                {processingStage}
+              </Text>
+            </View>
+          )}
 
           <FlatList
             horizontal
@@ -370,6 +396,9 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   createButtonText: { color: "white", fontWeight: "700" },
+  processingButtonContent: { flexDirection: "row", alignItems: "center", gap: 7 },
+  processingStatus: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingTop: 9, gap: 8 },
+  processingStatusText: { fontSize: 12, flex: 1 },
   thumbnailList: { paddingHorizontal: 16, paddingTop: 10, gap: 10 },
   thumbnailWrapper: { width: 82, height: 108, borderRadius: 8, overflow: "hidden" },
   thumbnail: { width: "100%", height: "100%", backgroundColor: "#222" },

@@ -12,10 +12,12 @@ export const Routes = {
   HOME: "Home",
   FILES: "Files",
   SCANNER: "Scanner",
+  SCANNER_CAMERA: "ScannerCamera",
   AI: "AI",
   SETTINGS: "Settings",
 
   // PDF Viewer Stack
+  PDF_VIEWER_STACK: "PDFViewerStack",
   PDF_VIEWER: "PDFViewer",
   EDITOR: "Editor",
   OCR: "OCR",

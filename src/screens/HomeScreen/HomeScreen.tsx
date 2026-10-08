@@ -100,7 +100,7 @@ export const HomeScreen: React.FC = () => {
       icon: "text-outline",
       onPress: () => {
         // Navigate to Text Extraction screen
-        navigation.navigate(Routes.PDF_VIEWER, { screen: Routes.TEXT_EXTRACTION });
+        navigation.navigate(Routes.PDF_VIEWER_STACK, { screen: Routes.TEXT_EXTRACTION });
       },
     },
     {
@@ -127,7 +127,7 @@ export const HomeScreen: React.FC = () => {
     <TouchableOpacity
       style={[styles.fileItem, { backgroundColor: theme.colors.surface }]}
       onPress={() => {
-        navigation.navigate(Routes.PDF_VIEWER, { screen: Routes.PDF_VIEWER, params: { fileId: item.id, filePath: item.uri } });
+        navigation.navigate(Routes.PDF_VIEWER_STACK, { screen: Routes.PDF_VIEWER, params: { fileId: item.id, filePath: item.uri } });
       }}
       activeOpacity={0.7}
     >
@@ -206,7 +206,7 @@ export const HomeScreen: React.FC = () => {
             styles.searchContainer,
             { backgroundColor: theme.colors.surface },
           ]}
-          onPress={() => navigation.navigate(Routes.PDF_VIEWER, { screen: Routes.SEARCH })}
+          onPress={() => navigation.navigate(Routes.PDF_VIEWER_STACK, { screen: Routes.SEARCH })}
           activeOpacity={0.7}
         >
           <Ionicons

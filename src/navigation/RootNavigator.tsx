@@ -61,7 +61,7 @@ export const RootNavigator: React.FC = () => {
       >
         {/* Main app – bottom tabs with nested stacks */}
         <Stack.Screen name={Routes.MAIN} component={MainTabs} />
-        <Stack.Screen name={Routes.PDF_VIEWER} component={PDFViewerStack} />
+        <Stack.Screen name={Routes.PDF_VIEWER_STACK} component={PDFViewerStack} />
 
         {/* Optional: Add an Auth screen here later if needed */}
         {/* <Stack.Screen name={Routes.AUTH} component={AuthScreen} /> */}
