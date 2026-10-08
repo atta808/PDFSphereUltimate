@@ -16,7 +16,7 @@ export type PDFViewerStackParamList = {
 // ==================== Scanner Stack ====================
 
 export type ScannerStackParamList = {
-  [Routes.SCANNER]: undefined;
+  [Routes.SCANNER_CAMERA]: undefined;
 };
 
 // ==================== Editor Stack ====================
