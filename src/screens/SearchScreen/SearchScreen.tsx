@@ -109,7 +109,7 @@ export const SearchScreen: React.FC = () => {
   // Handle file press
   const handleFilePress = (file: FileModel) => {
     Keyboard.dismiss();
-    navigation.navigate(Routes.PDF_VIEWER, { screen: Routes.PDF_VIEWER, params: {
+    navigation.navigate(Routes.PDF_VIEWER_STACK, { screen: Routes.PDF_VIEWER, params: {
       fileId: file.id,
       filePath: file.uri, }
     });
