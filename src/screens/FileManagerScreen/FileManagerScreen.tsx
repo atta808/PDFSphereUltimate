@@ -118,7 +118,7 @@ export const FileManagerScreen: React.FC = () => {
     : undefined;
 
   const handleOpen = (file: FileModel) => {
-    navigation.navigate(Routes.PDF_VIEWER, {
+    navigation.navigate(Routes.PDF_VIEWER_STACK, {
       screen: Routes.PDF_VIEWER,
       params: { fileId: file.id, filePath: file.uri },
     });
