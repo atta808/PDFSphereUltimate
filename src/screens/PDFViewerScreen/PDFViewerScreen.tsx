@@ -35,6 +35,7 @@ export const PDFViewerScreen: React.FC<{ route: PDFViewerScreenRouteProp }> = ({
   const [scale, setScale] = useState(1);
   const [isWebViewReady, setIsWebViewReady] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadingStage, setLoadingStage] = useState("Opening PDF...");
   const [isError, setIsError] = useState(false);
   const [isPasswordModalVisible, setIsPasswordModalVisible] = useState(false);
   const [password, setPassword] = useState("");
@@ -81,11 +82,13 @@ export const PDFViewerScreen: React.FC<{ route: PDFViewerScreenRouteProp }> = ({
     async (uri: string, suppliedPassword: string = "") => {
       try {
         setIsLoading(true);
+        setLoadingStage("Reading PDF...");
         setIsError(false);
         const file = new File(uri);
         if (!file.exists) {
           throw new Error("PDF file not found.");
         }
+        setLoadingStage("Preparing PDF viewer...");
         const base64 = await file.base64();
         setPendingBase64(base64);
         if (isWebViewReady) {
@@ -119,10 +122,12 @@ export const PDFViewerScreen: React.FC<{ route: PDFViewerScreenRouteProp }> = ({
         const data = JSON.parse(event.nativeEvent.data);
         if (data.type === "ready") {
           setIsWebViewReady(true);
+          setLoadingStage("Rendering PDF...");
           return;
         }
         if (data.type === "loaded") {
           setTotalPages(data.pageCount || 1);
+          setLoadingStage("Rendering first page...");
           setCurrentPage(1);
           setIsLoading(false);
           setIsError(false);
@@ -227,7 +232,7 @@ export const PDFViewerScreen: React.FC<{ route: PDFViewerScreenRouteProp }> = ({
           <View style={[styles.loadingOverlay, { backgroundColor: theme.colors.background }]}>
             <ActivityIndicator size="large" color={theme.colors.primary} />
             <Text style={[styles.loadingText, { color: theme.colors.textSecondary }]}>
-              Loading PDF...
+              {loadingStage}
             </Text>
           </View>
         )}
