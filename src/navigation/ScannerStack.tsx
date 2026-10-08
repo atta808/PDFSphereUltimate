@@ -14,7 +14,7 @@ export const ScannerStack: React.FC = () => {
         cardStyle: { backgroundColor: 'transparent' },
       }}
     >
-      <Stack.Screen name={Routes.SCANNER} component={ScannerScreen as any} />
+      <Stack.Screen name={Routes.SCANNER_CAMERA} component={ScannerScreen as any} />
     </Stack.Navigator>
   );
 };
