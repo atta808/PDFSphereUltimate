@@ -1,134 +1,146 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import {
-  View,
-  Text,
-  StyleSheet,
-  FlatList,
-  TouchableOpacity,
-  TextInput,
-  SafeAreaView,
-  StatusBar,
   ActivityIndicator,
   Alert,
-  RefreshControl,
+  FlatList,
   Modal,
+  RefreshControl,
+  SafeAreaView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
+import { useFocusEffect, useNavigation } from "@react-navigation/native";
+import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "../../theme/ThemeContext";
-import { useNavigation } from "@react-navigation/native";
 import { Routes } from "../../constants/routes";
 import { MainTabNavigationProp } from "../../navigation/types";
 import { FileModel } from "../../models/FileModel";
-import { fileRepository } from "../../repository/FileRepository";
-import { Ionicons } from "@expo/vector-icons";
+import { FolderModel } from "../../models/FolderModel";
+import { documentService } from "../../services/documents/DocumentService";
+import { folderService } from "../../services/documents/FolderService";
 
-type SortOption = "name" | "date" | "size";
+type LibraryView = "all" | "recent" | "favorites";
+
+const formatFileSize = (bytes: number): string => {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+};
+
+const formatDate = (date: Date): string => {
+  const diff = Math.max(0, Date.now() - date.getTime());
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  if (days === 0) return "Today";
+  if (days === 1) return "Yesterday";
+  if (days < 7) return `${days} days ago`;
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+};
 
 export const FileManagerScreen: React.FC = () => {
   const { theme } = useTheme();
   const navigation = useNavigation<MainTabNavigationProp>();
 
   const [files, setFiles] = useState<FileModel[]>([]);
-  const [filteredFiles, setFilteredFiles] = useState<FileModel[]>([]);
+  const [folders, setFolders] = useState<FolderModel[]>([]);
+  const [view, setView] = useState<LibraryView>("all");
+  const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [sortOption, setSortOption] = useState<SortOption>("date");
-  const [showSortMenu, setShowSortMenu] = useState(false);
-  const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
+  const [showCreateFolder, setShowCreateFolder] = useState(false);
+  const [showRename, setShowRename] = useState(false);
+  const [textValue, setTextValue] = useState("");
+  const [renameFileId, setRenameFileId] = useState<string | null>(null);
+  const [folderParentId, setFolderParentId] = useState<string | null>(null);
 
-  // Load files
-  const loadFiles = useCallback(async () => {
+  const loadWorkspace = useCallback(async () => {
     try {
-      const data = await fileRepository.getAllFiles();
-      setFiles(data);
-      applyFiltersAndSort(data, searchQuery, sortOption);
+      const [allFiles, rootFolders] = await Promise.all([
+        documentService.list(),
+        folderService.list(null),
+      ]);
+      setFiles(allFiles);
+      setFolders(rootFolders);
     } catch (error) {
-      console.error("Failed to load files:", error);
-      Alert.alert("Error", "Could not load files. Please try again.");
+      console.error("Failed to load document workspace:", error);
+      Alert.alert("Error", "Could not load your documents. Please try again.");
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, [searchQuery, sortOption]);
+  }, []);
 
-  // Apply filters and sorting
-  const applyFiltersAndSort = (
-    fileList: FileModel[],
-    query: string,
-    sort: SortOption,
-  ) => {
-    let result = [...fileList];
+  useFocusEffect(
+    useCallback(() => {
+      loadWorkspace();
+    }, [loadWorkspace]),
+  );
 
-    // Filter by search query
-    if (query.trim()) {
-      const lowerQuery = query.toLowerCase().trim();
+  const visibleFiles = useMemo(() => {
+    let result = files;
+
+    if (view === "recent") {
+      result = [...result].sort(
+        (a, b) => b.lastModified.getTime() - a.lastModified.getTime(),
+      ).slice(0, 20);
+    } else if (view === "favorites") {
+      result = result.filter((file) => file.isFavorite);
+    }
+
+    if (currentFolderId !== null) {
+      result = result.filter((file) => file.folderId === currentFolderId);
+    } else if (view === "all") {
+      result = result.filter((file) => !file.folderId);
+    }
+
+    const query = searchQuery.trim().toLowerCase();
+    if (query) {
       result = result.filter(
         (file) =>
-          file.name.toLowerCase().includes(lowerQuery) ||
-          file.metadata?.author?.toLowerCase().includes(lowerQuery) ||
-          file.metadata?.title?.toLowerCase().includes(lowerQuery),
+          file.name.toLowerCase().includes(query) ||
+          file.metadata?.title?.toLowerCase().includes(query) ||
+          file.metadata?.author?.toLowerCase().includes(query),
       );
     }
 
-    // Sort
-    result.sort((a, b) => {
-      switch (sort) {
-        case "name":
-          return a.name.localeCompare(b.name);
-        case "date":
-          return b.lastModified.getTime() - a.lastModified.getTime();
-        case "size":
-          return b.size - a.size;
-        default:
-          return 0;
-      }
+    return [...result].sort(
+      (a, b) => b.lastModified.getTime() - a.lastModified.getTime(),
+    );
+  }, [files, view, currentFolderId, searchQuery]);
+
+  const currentFolder = currentFolderId
+    ? folders.find((folder) => folder.id === currentFolderId)
+    : undefined;
+
+  const handleOpen = (file: FileModel) => {
+    navigation.navigate(Routes.PDF_VIEWER, {
+      screen: Routes.PDF_VIEWER,
+      params: { fileId: file.id, filePath: file.uri },
     });
-
-    setFilteredFiles(result);
   };
 
-  // Handle search input
-  const handleSearch = (text: string) => {
-    setSearchQuery(text);
-    applyFiltersAndSort(files, text, sortOption);
-  };
-
-  // Handle sort change
-  const handleSortChange = (option: SortOption) => {
-    setSortOption(option);
-    setShowSortMenu(false);
-    applyFiltersAndSort(files, searchQuery, option);
-  };
-
-  // Handle favorite toggle
-  const handleToggleFavorite = async (file: FileModel) => {
+  const handleFavorite = async (file: FileModel) => {
     try {
-      await fileRepository.toggleFavorite(file.id);
-      // Refresh local state
-      const updatedFiles = files.map((f) =>
-        f.id === file.id ? { ...f, isFavorite: !f.isFavorite } : f,
+      await documentService.toggleFavorite(file.id);
+      setFiles((current) =>
+        current.map((item) =>
+          item.id === file.id ? { ...item, isFavorite: !item.isFavorite } : item,
+        ),
       );
-      setFiles(updatedFiles);
-      applyFiltersAndSort(updatedFiles, searchQuery, sortOption);
-    } catch (error) {
-      console.error("Failed to toggle favorite:", error);
+    } catch {
       Alert.alert("Error", "Could not update favorite status.");
     }
   };
 
-  // Handle file press
-  const handleFilePress = (file: FileModel) => {
-    navigation.navigate(Routes.PDF_VIEWER, { screen: Routes.PDF_VIEWER, params: {
-      fileId: file.id,
-      filePath: file.uri, }
-    });
-  };
-
-  // Handle delete
-  const handleDeleteFile = (file: FileModel) => {
+  const handleDelete = (file: FileModel) => {
     Alert.alert(
-      "Delete File",
-      `Are you sure you want to delete "${file.name}"?`,
+      "Delete document",
+      `Delete "${file.name}"? The document and its saved AI/extraction data will be removed.`,
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -136,14 +148,10 @@ export const FileManagerScreen: React.FC = () => {
           style: "destructive",
           onPress: async () => {
             try {
-              await fileRepository.deleteFile(file.id);
-              // Remove from state
-              const updatedFiles = files.filter((f) => f.id !== file.id);
-              setFiles(updatedFiles);
-              applyFiltersAndSort(updatedFiles, searchQuery, sortOption);
-            } catch (error) {
-              console.error("Failed to delete file:", error);
-              Alert.alert("Error", "Could not delete file.");
+              await documentService.remove(file.id);
+              setFiles((current) => current.filter((item) => item.id !== file.id));
+            } catch {
+              Alert.alert("Error", "Could not delete the document.");
             }
           },
         },
@@ -151,567 +159,543 @@ export const FileManagerScreen: React.FC = () => {
     );
   };
 
-  // Handle long press for quick actions
-  const handleLongPress = (file: FileModel) => {
-    setSelectedFileId(file.id);
-    Alert.alert(file.name, "Choose an action", [
+  const openRename = (file: FileModel) => {
+    setRenameFileId(file.id);
+    setTextValue(file.name.replace(/\.pdf$/i, ""));
+    setShowRename(true);
+  };
+
+  const saveRename = async () => {
+    if (!renameFileId || !textValue.trim()) return;
+    try {
+      const name = textValue.trim().toLowerCase().endsWith(".pdf")
+        ? textValue.trim()
+        : `${textValue.trim()}.pdf`;
+      await documentService.rename(renameFileId, name);
+      setFiles((current) =>
+        current.map((item) =>
+          item.id === renameFileId ? { ...item, name } : item,
+        ),
+      );
+      setShowRename(false);
+    } catch {
+      Alert.alert("Error", "Could not rename the document.");
+    }
+  };
+
+  const handleMove = (file: FileModel) => {
+    const choices = [
+      {
+        text: "Workspace root",
+        onPress: async () => {
+          await documentService.moveToFolder(file.id, null);
+          setFiles((current) =>
+            current.map((item) =>
+              item.id === file.id ? { ...item, folderId: undefined } : item,
+            ),
+          );
+        },
+      },
+      ...folders.map((folder) => ({
+        text: folder.name,
+        onPress: async () => {
+          await documentService.moveToFolder(file.id, folder.id);
+          setFiles((current) =>
+            current.map((item) =>
+              item.id === file.id ? { ...item, folderId: folder.id } : item,
+            ),
+          );
+        },
+      })),
+      { text: "Cancel", style: "cancel" as const },
+    ];
+
+    Alert.alert("Move document", "Choose a destination", choices);
+  };
+
+  const handleDocumentMenu = (file: FileModel) => {
+    Alert.alert(file.name, "Document actions", [
+      { text: "Open", onPress: () => handleOpen(file) },
+      {
+        text: file.isFavorite ? "Remove Favorite" : "Add to Favorites",
+        onPress: () => handleFavorite(file),
+      },
+      { text: "Rename", onPress: () => openRename(file) },
+      { text: "Move to Folder", onPress: () => handleMove(file) },
+      { text: "Delete", style: "destructive", onPress: () => handleDelete(file) },
       { text: "Cancel", style: "cancel" },
-      {
-        text: "Favorite",
-        onPress: () => handleToggleFavorite(file),
-      },
-      {
-        text: "Delete",
-        style: "destructive",
-        onPress: () => handleDeleteFile(file),
-      },
     ]);
   };
 
-  // Initial load
-  useEffect(() => {
-    loadFiles();
-  }, []);
-
-  // Pull to refresh
-  const onRefresh = async () => {
-    setIsRefreshing(true);
-    await loadFiles();
+  const createFolder = async () => {
+    if (!textValue.trim()) return;
+    try {
+      const folder = await folderService.create(textValue, folderParentId);
+      if (folder.parentId === null) {
+        setFolders((current) =>
+          [...current, folder].sort((a, b) => a.name.localeCompare(b.name)),
+        );
+      }
+      setTextValue("");
+      setShowCreateFolder(false);
+    } catch {
+      Alert.alert("Error", "Could not create the folder.");
+    }
   };
 
-  // Format file size
-  const formatFileSize = (bytes: number): string => {
-    if (bytes < 1024) return bytes + " B";
-    if (bytes < 1048576) return (bytes / 1024).toFixed(1) + " KB";
-    if (bytes < 1073741824) return (bytes / 1048576).toFixed(1) + " MB";
-    return (bytes / 1073741824).toFixed(1) + " GB";
+  const openCreateFolder = () => {
+    setFolderParentId(currentFolderId);
+    setTextValue("");
+    setShowCreateFolder(true);
   };
 
-  // Format date
-  const formatDate = (date: Date): string => {
-    const now = new Date();
-    const diff = now.getTime() - date.getTime();
-    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-    if (days === 0) return "Today";
-    if (days === 1) return "Yesterday";
-    if (days < 7) return `${days} days ago`;
-    return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-  };
-
-  // Render sort menu
-  const renderSortMenu = () => {
-    if (!showSortMenu) return null;
-    return (
-      <Modal transparent animationType="fade" visible={showSortMenu}>
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setShowSortMenu(false)}
-        >
-          <View
-            style={[
-              styles.sortMenu,
-              {
-                backgroundColor: theme.colors.surface,
-                borderColor: theme.colors.border,
-              },
-            ]}
-          >
-            {(["name", "date", "size"] as SortOption[]).map((option) => (
-              <TouchableOpacity
-                key={option}
-                style={[
-                  styles.sortMenuItem,
-                  sortOption === option && {
-                    backgroundColor: theme.colors.primarySurface,
-                  },
-                ]}
-                onPress={() => handleSortChange(option)}
-              >
-                <Text
-                  style={[
-                    styles.sortMenuItemText,
-                    { color: theme.colors.text },
-                  ]}
-                >
-                  Sort by {option.charAt(0).toUpperCase() + option.slice(1)}
-                </Text>
-                {sortOption === option && (
-                  <Ionicons
-                    name="checkmark"
-                    size={18}
-                    color={theme.colors.primary}
-                  />
-                )}
-              </TouchableOpacity>
-            ))}
-          </View>
-        </TouchableOpacity>
-      </Modal>
-    );
-  };
-
-  // Render empty state
-  if (!isLoading && filteredFiles.length === 0) {
-    return (
-      <SafeAreaView
-        style={[styles.safeArea, { backgroundColor: theme.colors.background }]}
+  const renderFolder = ({ item }: { item: FolderModel }) => (
+    <TouchableOpacity
+      style={[
+        styles.folderCard,
+        {
+          backgroundColor: theme.colors.surface,
+          borderColor: theme.colors.borderLight,
+        },
+      ]}
+      onPress={async () => {
+        setCurrentFolderId(item.id);
+        setView("all");
+        const children = await folderService.list(item.id);
+        if (children.length) {
+          // Root navigation is intentionally kept simple in this first workspace slice.
+          // Child folders can be promoted to the root folder collection in a later UI pass.
+        }
+      }}
+    >
+      <View
+        style={[
+          styles.folderIcon,
+          { backgroundColor: theme.colors.primarySurface },
+        ]}
       >
+        <Ionicons name="folder" size={22} color={theme.colors.primary} />
+      </View>
+      <Text
+        style={[styles.folderName, { color: theme.colors.text }]}
+        numberOfLines={1}
+      >
+        {item.name}
+      </Text>
+    </TouchableOpacity>
+  );
+
+  const renderFile = ({ item }: { item: FileModel }) => (
+    <TouchableOpacity
+      style={[
+        styles.fileCard,
+        {
+          backgroundColor: theme.colors.surface,
+          borderColor: theme.colors.borderLight,
+        },
+      ]}
+      onPress={() => handleOpen(item)}
+      onLongPress={() => handleDocumentMenu(item)}
+      activeOpacity={0.75}
+    >
+      <View
+        style={[
+          styles.pdfIcon,
+          { backgroundColor: theme.colors.primarySurface },
+        ]}
+      >
+        <Ionicons name="document-text" size={26} color={theme.colors.primary} />
+      </View>
+
+      <View style={styles.fileBody}>
+        <Text
+          style={[styles.fileName, { color: theme.colors.text }]}
+          numberOfLines={1}
+        >
+          {item.name}
+        </Text>
+        <Text style={[styles.fileMeta, { color: theme.colors.textSecondary }]}>
+          {item.pages} pages · {formatFileSize(item.size)} · {formatDate(item.lastModified)}
+        </Text>
+      </View>
+
+      <TouchableOpacity
+        style={styles.iconButton}
+        onPress={() => handleFavorite(item)}
+        accessibilityLabel={item.isFavorite ? "Remove favorite" : "Add favorite"}
+      >
+        <Ionicons
+          name={item.isFavorite ? "star" : "star-outline"}
+          size={20}
+          color={item.isFavorite ? theme.colors.warning : theme.colors.iconSecondary}
+        />
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={styles.iconButton}
+        onPress={() => handleDocumentMenu(item)}
+        accessibilityLabel="Document actions"
+      >
+        <Ionicons name="ellipsis-vertical" size={20} color={theme.colors.iconSecondary} />
+      </TouchableOpacity>
+    </TouchableOpacity>
+  );
+
+  if (isLoading) {
+    return (
+      <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.colors.background }]}>
         <StatusBar barStyle={theme.isDark ? "light-content" : "dark-content"} />
-        <View
-          style={[
-            styles.header,
-            {
-              backgroundColor: theme.colors.background,
-              borderBottomColor: theme.colors.border,
-            },
-          ]}
-        >
-          <Text style={[styles.headerTitle, { color: theme.colors.text }]}>
-            Files
+        <View style={styles.loading}>
+          <ActivityIndicator size="large" color={theme.colors.primary} />
+          <Text style={[styles.loadingText, { color: theme.colors.textSecondary }]}>
+            Loading workspace…
           </Text>
-          <TouchableOpacity onPress={() => navigation.navigate(Routes.SCANNER)}>
-            <Ionicons
-              name="add-circle-outline"
-              size={28}
-              color={theme.colors.primary}
-            />
-          </TouchableOpacity>
-        </View>
-        <View style={styles.searchContainer}>
-          <View
-            style={[
-              styles.searchBar,
-              { backgroundColor: theme.colors.surface },
-            ]}
-          >
-            <Ionicons
-              name="search"
-              size={20}
-              color={theme.colors.iconSecondary}
-              style={styles.searchIcon}
-            />
-            <TextInput
-              style={[styles.searchInput, { color: theme.colors.text }]}
-              placeholder="Search files..."
-              placeholderTextColor={theme.colors.textPlaceholder}
-              value={searchQuery}
-              onChangeText={handleSearch}
-            />
-          </View>
-        </View>
-        <View
-          style={[
-            styles.emptyContainer,
-            { backgroundColor: theme.colors.background },
-          ]}
-        >
-          <Ionicons
-            name="documents-outline"
-            size={80}
-            color={theme.colors.iconSecondary}
-          />
-          <Text style={[styles.emptyTitle, { color: theme.colors.text }]}>
-            {searchQuery ? "No results found" : "No Files Yet"}
-          </Text>
-          <Text
-            style={[
-              styles.emptySubtitle,
-              { color: theme.colors.textSecondary },
-            ]}
-          >
-            {searchQuery
-              ? "Try a different search term"
-              : "Scan a document or import a PDF to get started"}
-          </Text>
-          {!searchQuery && (
-            <TouchableOpacity
-              style={[
-                styles.emptyButton,
-                { backgroundColor: theme.colors.primary },
-              ]}
-              onPress={() => navigation.navigate(Routes.SCANNER)}
-            >
-              <Text style={styles.emptyButtonText}>Scan Document</Text>
-            </TouchableOpacity>
-          )}
         </View>
       </SafeAreaView>
     );
   }
 
-  // Main render
   return (
-    <SafeAreaView
-      style={[styles.safeArea, { backgroundColor: theme.colors.background }]}
-    >
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.colors.background }]}>
       <StatusBar barStyle={theme.isDark ? "light-content" : "dark-content"} />
 
-      {/* Header */}
-      <View
-        style={[
-          styles.header,
-          {
-            backgroundColor: theme.colors.background,
-            borderBottomColor: theme.colors.border,
-          },
-        ]}
-      >
-        <Text style={[styles.headerTitle, { color: theme.colors.text }]}>
-          Files
-        </Text>
-        <View style={styles.headerActions}>
-          <TouchableOpacity
-            onPress={() => setShowSortMenu(true)}
-            style={styles.headerButton}
-          >
-            <Ionicons
-              name="funnel-outline"
-              size={24}
-              color={theme.colors.text}
-            />
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => navigation.navigate(Routes.SCANNER)}
-            style={styles.headerButton}
-          >
-            <Ionicons
-              name="add-circle-outline"
-              size={28}
-              color={theme.colors.primary}
-            />
-          </TouchableOpacity>
+      <View style={styles.header}>
+        <View style={styles.headerCopy}>
+          <Text style={[styles.eyebrow, { color: theme.colors.primary }]}>
+            DOCUMENT WORKSPACE
+          </Text>
+          <Text style={[styles.title, { color: theme.colors.text }]}>
+            {currentFolder?.name ?? "My Documents"}
+          </Text>
+          <Text style={[styles.subtitle, { color: theme.colors.textSecondary }]}>
+            {visibleFiles.length} {visibleFiles.length === 1 ? "document" : "documents"}
+          </Text>
         </View>
+
+        <TouchableOpacity
+          style={[styles.addButton, { backgroundColor: theme.colors.primary }]}
+          onPress={() => navigation.navigate(Routes.SCANNER)}
+        >
+          <Ionicons name="add" size={25} color={theme.colors.primaryText} />
+        </TouchableOpacity>
       </View>
 
-      {/* Sort Menu */}
-      {renderSortMenu()}
-
-      {/* Search Bar */}
-      <View style={styles.searchContainer}>
-        <View
-          style={[styles.searchBar, { backgroundColor: theme.colors.surface }]}
-        >
-          <Ionicons
-            name="search"
-            size={20}
-            color={theme.colors.iconSecondary}
-            style={styles.searchIcon}
-          />
+      <View style={styles.searchRow}>
+        <View style={[styles.searchBox, { backgroundColor: theme.colors.surface }]}>
+          <Ionicons name="search" size={19} color={theme.colors.iconSecondary} />
           <TextInput
             style={[styles.searchInput, { color: theme.colors.text }]}
-            placeholder="Search files..."
-            placeholderTextColor={theme.colors.textPlaceholder}
             value={searchQuery}
-            onChangeText={handleSearch}
+            onChangeText={setSearchQuery}
+            placeholder="Search documents..."
+            placeholderTextColor={theme.colors.textPlaceholder}
+            returnKeyType="search"
           />
           {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => handleSearch("")}>
-              <Ionicons
-                name="close-circle"
-                size={20}
-                color={theme.colors.iconSecondary}
-              />
+            <TouchableOpacity onPress={() => setSearchQuery("")}>
+              <Ionicons name="close-circle" size={19} color={theme.colors.iconSecondary} />
             </TouchableOpacity>
           )}
         </View>
+        <TouchableOpacity
+          style={[styles.folderAddButton, { borderColor: theme.colors.border }]}
+          onPress={openCreateFolder}
+        >
+          <Ionicons name="folder-open-outline" size={21} color={theme.colors.primary} />
+        </TouchableOpacity>
       </View>
 
-      {/* File List */}
-      {isLoading ? (
-        <View
-          style={[
-            styles.loadingContainer,
-            { backgroundColor: theme.colors.background },
-          ]}
-        >
-          <ActivityIndicator size="large" color={theme.colors.primary} />
-        </View>
-      ) : (
-        <FlatList
-          data={filteredFiles}
-          keyExtractor={(item) => item.id}
-          refreshControl={
-            <RefreshControl
-              refreshing={isRefreshing}
-              onRefresh={onRefresh}
-              tintColor={theme.colors.primary}
-            />
-          }
-          renderItem={({ item }) => (
-            <TouchableOpacity
+      <View style={styles.segmentRow}>
+        {([
+          ["all", "All"],
+          ["recent", "Recent"],
+          ["favorites", "Favorites"],
+        ] as const).map(([key, label]) => (
+          <TouchableOpacity
+            key={key}
+            style={[
+              styles.segment,
+              view === key && { backgroundColor: theme.colors.primarySurface },
+            ]}
+            onPress={() => {
+              setView(key);
+              setCurrentFolderId(null);
+            }}
+          >
+            <Text
               style={[
-                styles.fileItem,
+                styles.segmentText,
                 {
-                  backgroundColor: theme.colors.surface,
-                  borderColor: theme.colors.border,
+                  color:
+                    view === key ? theme.colors.primary : theme.colors.textSecondary,
                 },
               ]}
-              onPress={() => handleFilePress(item)}
-              onLongPress={() => handleLongPress(item)}
-              activeOpacity={0.7}
             >
-              <View
-                style={[
-                  styles.fileIcon,
-                  { backgroundColor: theme.colors.primarySurface },
-                ]}
-              >
-                <Ionicons
-                  name="document-text"
-                  size={28}
-                  color={theme.colors.primary}
-                />
-              </View>
-              <View style={styles.fileInfo}>
-                <Text
-                  style={[styles.fileName, { color: theme.colors.text }]}
-                  numberOfLines={1}
-                >
-                  {item.name}
-                </Text>
-                <View style={styles.fileMetaRow}>
-                  <Text
-                    style={[
-                      styles.fileMeta,
-                      { color: theme.colors.textSecondary },
-                    ]}
-                  >
-                    {item.pages} pages
-                  </Text>
-                  <Text
-                    style={[
-                      styles.fileMetaDot,
-                      { color: theme.colors.textSecondary },
-                    ]}
-                  >
-                    ·
-                  </Text>
-                  <Text
-                    style={[
-                      styles.fileMeta,
-                      { color: theme.colors.textSecondary },
-                    ]}
-                  >
-                    {formatFileSize(item.size)}
-                  </Text>
-                  <Text
-                    style={[
-                      styles.fileMetaDot,
-                      { color: theme.colors.textSecondary },
-                    ]}
-                  >
-                    ·
-                  </Text>
-                  <Text
-                    style={[
-                      styles.fileMeta,
-                      { color: theme.colors.textSecondary },
-                    ]}
-                  >
-                    {formatDate(item.lastModified)}
-                  </Text>
-                </View>
-              </View>
-              <View style={styles.fileActions}>
-                <TouchableOpacity
-                  style={styles.favoriteButton}
-                  onPress={() => handleToggleFavorite(item)}
-                >
-                  <Ionicons
-                    name={item.isFavorite ? "star" : "star-outline"}
-                    size={22}
-                    color={
-                      item.isFavorite
-                        ? theme.colors.warning
-                        : theme.colors.iconSecondary
-                    }
-                  />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.moreButton}
-                  onPress={() => handleDeleteFile(item)}
-                >
-                  <Ionicons
-                    name="trash-outline"
-                    size={20}
-                    color={theme.colors.iconSecondary}
-                  />
-                </TouchableOpacity>
-              </View>
-            </TouchableOpacity>
-          )}
-          ItemSeparatorComponent={() => <View style={styles.separator} />}
-          contentContainerStyle={styles.listContent}
-          showsVerticalScrollIndicator={false}
+              {label}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {view === "all" && currentFolderId === null && folders.length > 0 && (
+        <FlatList
+          data={folders}
+          renderItem={renderFolder}
+          keyExtractor={(item) => item.id}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.folderList}
         />
       )}
+
+      {currentFolderId !== null && (
+        <TouchableOpacity
+          style={styles.backRow}
+          onPress={() => setCurrentFolderId(null)}
+        >
+          <Ionicons name="arrow-back" size={18} color={theme.colors.primary} />
+          <Text style={[styles.backText, { color: theme.colors.primary }]}>
+            All folders
+          </Text>
+        </TouchableOpacity>
+      )}
+
+      <FlatList
+        data={visibleFiles}
+        renderItem={renderFile}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={styles.list}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={async () => {
+              setIsRefreshing(true);
+              await loadWorkspace();
+            }}
+            tintColor={theme.colors.primary}
+          />
+        }
+        ListEmptyComponent={
+          <View style={styles.empty}>
+            <View
+              style={[
+                styles.emptyIcon,
+                { backgroundColor: theme.colors.primarySurface },
+              ]}
+            >
+              <Ionicons name="documents-outline" size={34} color={theme.colors.primary} />
+            </View>
+            <Text style={[styles.emptyTitle, { color: theme.colors.text }]}>
+              {searchQuery ? "No matching documents" : "Your workspace is empty"}
+            </Text>
+            <Text style={[styles.emptyText, { color: theme.colors.textSecondary }]}>
+              {searchQuery
+                ? "Try another search term."
+                : "Scan a document or import a PDF to start building your library."}
+            </Text>
+            {!searchQuery && (
+              <TouchableOpacity
+                style={[styles.primaryAction, { backgroundColor: theme.colors.primary }]}
+                onPress={() => navigation.navigate(Routes.SCANNER)}
+              >
+                <Ionicons name="scan-outline" size={18} color={theme.colors.primaryText} />
+                <Text style={[styles.primaryActionText, { color: theme.colors.primaryText }]}>
+                  Scan Document
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        }
+        showsVerticalScrollIndicator={false}
+      />
+
+      <Modal
+        visible={showCreateFolder || showRename}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          setShowCreateFolder(false);
+          setShowRename(false);
+        }}
+      >
+        <View style={[styles.modalBackdrop, { backgroundColor: theme.colors.overlay }]}>
+          <View style={[styles.modalCard, { backgroundColor: theme.colors.surface }]}>
+            <Text style={[styles.modalTitle, { color: theme.colors.text }]}>
+              {showRename ? "Rename document" : "New folder"}
+            </Text>
+            <TextInput
+              autoFocus
+              style={[
+                styles.modalInput,
+                {
+                  color: theme.colors.text,
+                  borderColor: theme.colors.border,
+                  backgroundColor: theme.colors.background,
+                },
+              ]}
+              value={textValue}
+              onChangeText={setTextValue}
+              placeholder={showRename ? "Document name" : "Folder name"}
+              placeholderTextColor={theme.colors.textPlaceholder}
+              onSubmitEditing={showRename ? saveRename : createFolder}
+            />
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={styles.modalCancel}
+                onPress={() => {
+                  setShowCreateFolder(false);
+                  setShowRename(false);
+                }}
+              >
+                <Text style={[styles.modalCancelText, { color: theme.colors.textSecondary }]}>
+                  Cancel
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalSave, { backgroundColor: theme.colors.primary }]}
+                onPress={showRename ? saveRename : createFolder}
+              >
+                <Text style={[styles.modalSaveText, { color: theme.colors.primaryText }]}>
+                  {showRename ? "Save" : "Create"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-  },
+  safeArea: { flex: 1 },
   header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
     paddingHorizontal: 20,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-  },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: "700",
-  },
-  headerActions: {
+    paddingTop: 16,
+    paddingBottom: 12,
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
   },
-  headerButton: {
-    padding: 4,
+  headerCopy: { flex: 1 },
+  eyebrow: { fontSize: 11, fontWeight: "800", letterSpacing: 1.1 },
+  title: { fontSize: 28, fontWeight: "800", marginTop: 3 },
+  subtitle: { fontSize: 13, marginTop: 3 },
+  addButton: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    alignItems: "center",
+    justifyContent: "center",
     marginLeft: 12,
   },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.4)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  sortMenu: {
-    borderRadius: 12,
-    borderWidth: 1,
-    paddingVertical: 4,
-    minWidth: 200,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 5,
-  },
-  sortMenuItem: {
+  searchRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 8,
-  },
-  sortMenuItemText: {
-    fontSize: 14,
-    fontWeight: "500",
-  },
-  searchContainer: {
     paddingHorizontal: 20,
-    paddingVertical: 12,
+    gap: 10,
   },
-  searchBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    elevation: 2,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-  },
-  searchIcon: {
-    marginRight: 8,
-  },
-  searchInput: {
+  searchBox: {
     flex: 1,
-    fontSize: 16,
-    paddingVertical: 6,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  listContent: {
-    paddingHorizontal: 20,
-    paddingBottom: 20,
-  },
-  fileItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 12,
+    minHeight: 46,
+    borderRadius: 14,
     paddingHorizontal: 14,
-    borderRadius: 12,
-    borderWidth: 1,
+    flexDirection: "row",
+    alignItems: "center",
   },
-  fileIcon: {
+  searchInput: { flex: 1, fontSize: 15, marginLeft: 9, paddingVertical: 8 },
+  folderAddButton: {
+    width: 46,
+    height: 46,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  segmentRow: {
+    flexDirection: "row",
+    marginHorizontal: 20,
+    marginTop: 14,
+    backgroundColor: "transparent",
+  },
+  segment: {
+    paddingHorizontal: 15,
+    paddingVertical: 8,
+    borderRadius: 10,
+    marginRight: 6,
+  },
+  segmentText: { fontSize: 13, fontWeight: "700" },
+  folderList: { paddingHorizontal: 20, paddingVertical: 12 },
+  folderCard: {
+    width: 128,
+    minHeight: 76,
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 12,
+    marginRight: 10,
+  },
+  folderIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 7,
+  },
+  folderName: { fontSize: 13, fontWeight: "700" },
+  backRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+    gap: 6,
+  },
+  backText: { fontSize: 13, fontWeight: "700" },
+  list: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 28, flexGrow: 1 },
+  fileCard: {
+    minHeight: 76,
+    borderRadius: 15,
+    borderWidth: 1,
+    marginBottom: 10,
+    padding: 12,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  pdfIcon: {
     width: 48,
     height: 48,
-    borderRadius: 24,
+    borderRadius: 13,
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 14,
+    marginRight: 12,
   },
-  fileInfo: {
-    flex: 1,
-  },
-  fileName: {
-    fontSize: 16,
-    fontWeight: "500",
-    marginBottom: 4,
-  },
-  fileMetaRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    flexWrap: "wrap",
-  },
-  fileMeta: {
-    fontSize: 13,
-    fontWeight: "400",
-  },
-  fileMetaDot: {
-    fontSize: 13,
-    marginHorizontal: 4,
-  },
-  fileActions: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  favoriteButton: {
-    padding: 4,
-  },
-  moreButton: {
-    padding: 4,
-    marginLeft: 8,
-  },
-  separator: {
-    height: 10,
-  },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 20,
-  },
-  emptyTitle: {
-    fontSize: 20,
-    fontWeight: "600",
-    marginTop: 16,
-  },
-  emptySubtitle: {
-    fontSize: 16,
-    marginTop: 8,
-    marginBottom: 24,
-    textAlign: "center",
-  },
-  emptyButton: {
-    paddingHorizontal: 32,
-    paddingVertical: 14,
+  fileBody: { flex: 1, minWidth: 0 },
+  fileName: { fontSize: 15, fontWeight: "700" },
+  fileMeta: { fontSize: 11.5, marginTop: 5 },
+  iconButton: { padding: 7, marginLeft: 2 },
+  loading: { flex: 1, alignItems: "center", justifyContent: "center", gap: 10 },
+  loadingText: { fontSize: 14 },
+  empty: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 28, paddingTop: 70 },
+  emptyIcon: { width: 68, height: 68, borderRadius: 20, alignItems: "center", justifyContent: "center" },
+  emptyTitle: { fontSize: 20, fontWeight: "800", marginTop: 18, textAlign: "center" },
+  emptyText: { fontSize: 14, lineHeight: 21, marginTop: 8, textAlign: "center" },
+  primaryAction: {
+    marginTop: 20,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
     borderRadius: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
   },
-  emptyButtonText: {
-    color: "white",
-    fontWeight: "600",
-    fontSize: 16,
-  },
+  primaryActionText: { fontSize: 14, fontWeight: "800" },
+  modalBackdrop: { flex: 1, alignItems: "center", justifyContent: "center", padding: 24 },
+  modalCard: { width: "100%", maxWidth: 420, borderRadius: 18, padding: 20 },
+  modalTitle: { fontSize: 19, fontWeight: "800", marginBottom: 14 },
+  modalInput: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 13, paddingVertical: 11, fontSize: 15 },
+  modalActions: { flexDirection: "row", justifyContent: "flex-end", alignItems: "center", marginTop: 18, gap: 10 },
+  modalCancel: { paddingHorizontal: 14, paddingVertical: 11 },
+  modalCancelText: { fontSize: 14, fontWeight: "700" },
+  modalSave: { paddingHorizontal: 17, paddingVertical: 11, borderRadius: 11 },
+  modalSaveText: { fontSize: 14, fontWeight: "800" },
 });
